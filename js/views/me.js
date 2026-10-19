@@ -1,5 +1,5 @@
 import { sb, state, me, route, esc, run, toast, pageHead, avatar, nameOf, sectionChip, roleChips, render, $, loadShared, discordAvatar } from '../core.js';
-import { calendarsFor } from '../logic.js';
+import { calendarsFor, LINK_DISCORD_TAKEN } from '../logic.js';
 
 route('/me', async () => {
   const u = state.profile;
@@ -13,7 +13,7 @@ route('/me', async () => {
   setTimeout(() => {
     $('#link-discord')?.addEventListener('click', async () => {
       const r = await sb.auth.linkIdentity({ provider: 'discord', options: { redirectTo: location.origin + location.pathname + '#/me' } });
-      if (r?.error) toast(/manual linking/i.test(r.error.message) ? '管理員還沒開啟「帳號連結」功能（Supabase 的 Allow manual linking）。' : /already/i.test(r.error.message) ? '這個 Discord 已經綁在另一個帳號上，請管理員先刪掉那個帳號。' : '連結失敗：' + r.error.message, 'bad');
+      if (r?.error) toast(/manual linking/i.test(r.error.message) ? '管理員還沒開啟「帳號連結」功能（Supabase 的 Allow manual linking）。' : /already/i.test(r.error.message) ? LINK_DISCORD_TAKEN : '連結失敗：' + r.error.message, 'bad');
     });
     $('#me-form')?.addEventListener('submit', async (e) => {
       e.preventDefault(); const f = new FormData(e.target);
