@@ -878,7 +878,7 @@ create policy scores_delete on storage.objects for delete using (bucket_id = 'sc
 -- 泠靈把一首曲目的發譜（新建曲目、建聲部、改人數與聲部組、登記新樂譜、撤掉舊樂譜的登記、掛場次）
 -- 一次交給這個函式：任何一步失敗，整次呼叫都不生效。以呼叫者身分執行（security invoker），
 -- 上面的 RLS 照常生效，不是幹部就寫不進去。改介面時要把 lingling_publish_version 加一。
--- 錯誤代碼：PT409 版本不符、22023 輸入不對、PT404 找不到（PostgREST 依 PTxyz 回 HTTP xyz）、23505 檔案已有登記。
+-- 錯誤代碼：PT409 版本不符、22023 輸入不對（含要撤的不是這首曲目泠靈發的樂譜）、PT404 找不到（PostgREST 依 PTxyz 回 HTTP xyz）、23505 檔案已有登記。
 create or replace function public.lingling_publish_version() returns int
 language sql immutable as $$ select 1 $$;
 
@@ -888,7 +888,8 @@ declare
   pid uuid := (payload->>'piece_id')::uuid;
   np jsonb := payload->'new_piece';
   piece_created boolean := false;
-  x jsonb; score jsonb; v_part uuid; n int;
+  ll_path text := '^lingling/' || pid || '/[0-9a-f]{64}-[0-9a-z]{1,32}\.pdf$';  -- 這首曲目的泠靈路徑
+  x jsonb; score jsonb; v_part uuid; v_score uuid; n int;
   new_parts jsonb := '{}';   -- 這次新建的聲部：名稱 → 編號
   created jsonb := '[]'; added jsonb := '[]'; removed jsonb := '[]'; attached jsonb := '[]';
 begin
@@ -937,7 +938,15 @@ begin
     end if;
   end loop;
 
-  -- 撤掉舊樂譜的登記（只撤這首曲目的；已經不在的略過，回傳實際撤掉的）
+  -- 撤掉舊樂譜的登記：只撤這首曲目泠靈發的（路徑是這首曲目的泠靈路徑）；指到別人放的或別首曲目的就整個不做，
+  -- 已經不在的略過，回傳實際撤掉的
+  select s.id into v_score from scores s
+  where s.id in (select jsonb_array_elements_text(coalesce(payload->'remove_scores', '[]'))::uuid)
+    and (s.piece_id <> pid or coalesce(s.file_path, '') !~ ll_path)
+  limit 1;
+  if v_score is not null then
+    raise exception '不能撤掉這筆樂譜登記（不是這首曲目泠靈發的）：%', v_score using errcode = '22023';
+  end if;
   with gone as (
     delete from scores
     where piece_id = pid and id in (select jsonb_array_elements_text(coalesce(payload->'remove_scores', '[]'))::uuid)
@@ -960,7 +969,7 @@ begin
     if v_part is not null and not exists (select 1 from piece_parts pp where pp.id = v_part and pp.piece_id = pid) then
       raise exception '找不到這首曲目的聲部 %', v_part using errcode = 'PT404';
     end if;
-    if coalesce(x->>'file_path', '') !~ ('^lingling/' || pid || '/[0-9a-f]{64}-[0-9a-z]{1,32}\.pdf$') then
+    if coalesce(x->>'file_path', '') !~ ll_path then
       raise exception '不是泠靈的樂譜路徑：%', x->>'file_path' using errcode = '22023';
     end if;
     if exists (select 1 from scores s where s.file_path = x->>'file_path') then
