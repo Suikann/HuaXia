@@ -16,7 +16,7 @@ const E = (n) => `55555555-5555-5555-5555-55555555555${n}`;
 async function as(uid, sql) {
   await db.exec(`reset role; select set_config('test.uid','${uid}',false); set role authenticated;`);
   try { const r = await db.exec(sql); return { rows: r[r.length - 1]?.rows ?? [] }; }
-  catch (e) { return { error: e.message }; }
+  catch (e) { return { error: e.message, code: e.code }; }
   finally { await db.exec('reset role'); }
 }
 
@@ -285,4 +285,128 @@ test('總譜：絲竹曲目大家都看得到；大團曲目只有組長、聲�
   assert.deepEqual(await t(L), ['P1總譜', 'P2總譜']);  // 組長
   await as(A, `update piece_parts set tutor_id='${B}' where id='${PT1}'`);
   assert.deepEqual(await t(B), ['P1總譜', 'P2總譜']);  // 當上 P1 的聲部長
+});
+
+// ---------- 泠靈發譜函式（docs/LINGLING.md） ----------
+const P3 = '22222222-2222-2222-2222-222222222223', P4 = '22222222-2222-2222-2222-222222222224';
+const llPath = (piece, c, slot = 'score') => `lingling/${piece}/${c.repeat(64)}-${slot}.pdf`;
+const publish = (uid, payload) => as(uid, `select lingling_publish('${JSON.stringify({ version: 1, ...payload }).replace(/'/g, "''")}'::jsonb) as r`);
+const upload = (...paths) => db.exec(`insert into storage.objects (bucket_id, name) values ${paths.map((p) => `('scores','${p}')`).join(',')}`);
+
+test('泠靈發譜：版本查詢；登入的人才能呼叫，版本不符時整個不做', async () => {
+  assert.equal((await as(A, `select lingling_publish_version() as v`)).rows[0].v, 1);
+  assert.equal((await as(B, `select lingling_publish_version() as v`)).rows[0].v, 1);
+  assert.match((await as('', `set role anon; select lingling_publish_version()`)).error, /permission denied for function lingling_publish_version$/);
+  assert.match((await as('', `set role anon; select lingling_publish('{}'::jsonb)`)).error, /permission denied for function lingling_publish$/);
+  const r = await as(A, `select lingling_publish('{"version":2,"piece_id":"${P3}","new_piece":{"title":"新曲"}}'::jsonb)`);
+  assert.match(r.error, /介面版本/);
+  assert.equal(r.code, 'PT409');
+  assert.equal((await as(A, `select 1 from pieces where id='${P3}'`)).rows.length, 0);
+});
+
+test('泠靈發譜：新建曲目、聲部、樂譜與掛場次一次完成；重跑沿用同一首、不重複掛', async () => {
+  await upload(llPath(P3, 'a'), llPath(P3, 'b'));
+  const payload = {
+    piece_id: P3, new_piece: { title: '春江花月夜', composer: '佚名', duration_min: 7.5, ensemble: 'tutti' },
+    create_parts: [{ name: '二胡 I', needed: '6-8', needed_min: 6, section: '', sort: 1 }, { name: '琵琶', needed: '2↑', needed_min: 2, section: '彈撥', sort: 2 }],
+    add_scores: [{ new_part: '二胡 I', title: '二胡 I', file_path: llPath(P3, 'a') }, { part_id: null, title: '總譜', file_path: llPath(P3, 'b') }],
+    attach_events: [E(4)],
+  };
+  const { rows, error } = await publish(A, payload);
+  assert.equal(error, undefined);
+  const out = rows[0].r;
+  assert.equal(out.version, 1);
+  assert.equal(out.piece_id, P3);
+  assert.equal(out.piece_created, true);
+  assert.deepEqual(out.created_parts.map((p) => p.name), ['二胡 I', '琵琶']);
+  const erhu = out.created_parts[0].id;
+  assert.deepEqual(out.added_scores.map((s) => [s.part_id, s.file_path]), [[erhu, llPath(P3, 'a')], [null, llPath(P3, 'b')]]);
+  assert.deepEqual(out.removed_scores, []);
+  assert.deepEqual(out.attached_events, [E(4)]);
+  const parts = (await as(A, `select name, needed, needed_min, section from piece_parts where piece_id='${P3}' order by sort`)).rows;
+  assert.deepEqual(parts, [{ name: '二胡 I', needed: '6-8', needed_min: 6, section: '拉弦' }, { name: '琵琶', needed: '2↑', needed_min: 2, section: '彈撥' }]);
+  const again = await publish(A, { piece_id: P3, new_piece: payload.new_piece, attach_events: [E(4)] });
+  assert.equal(again.rows[0].r.piece_created, false);
+  assert.deepEqual(again.rows[0].r.attached_events, []);
+  assert.equal((await as(A, `select 1 from pieces where id='${P3}'`)).rows.length, 1);
+  assert.equal((await as(A, `select 1 from event_pieces where piece_id='${P3}'`)).rows.length, 1);
+});
+
+test('泠靈發譜：改人數與聲部組、取代樂譜；已經不在的登記略過，回傳實際撤掉的', async () => {
+  const erhu = (await as(A, `select id from piece_parts where piece_id='${P3}' and name='二胡 I'`)).rows[0].id;
+  const old = (await as(A, `select id from scores where piece_id='${P3}' and part_id='${erhu}'`)).rows[0].id;
+  await upload(llPath(P3, 'c'));
+  const { rows, error } = await publish(A, {
+    piece_id: P3, update_parts: [{ id: erhu, needed: '4', needed_min: 4 }],
+    remove_scores: [old, '99999999-9999-9999-9999-999999999999'],
+    add_scores: [{ part_id: erhu, title: '二胡 I', file_path: llPath(P3, 'c') }],
+  });
+  assert.equal(error, undefined);
+  assert.deepEqual(rows[0].r.removed_scores, [{ id: old, part_id: erhu, file_path: llPath(P3, 'a') }]);
+  assert.deepEqual((await as(A, `select needed, needed_min, section from piece_parts where id='${erhu}'`)).rows[0], { needed: '4', needed_min: 4, section: '拉弦' });
+  assert.deepEqual((await as(A, `select file_path from scores where part_id='${erhu}'`)).rows.map((x) => x.file_path), [llPath(P3, 'c')]);
+});
+
+test('泠靈發譜：只撤這首曲目泠靈發的登記，要撤別人放的或別首曲目的就整個不做', async () => {
+  const erhu = (await as(A, `select id from piece_parts where piece_id='${P3}' and name='二胡 I'`)).rows[0].id;
+  const mine = (await as(A, `select id from scores where file_path='${llPath(P3, 'c')}'`)).rows[0].id;
+  const add = async (piece, path) => (await as(A, `insert into scores (piece_id, part_id, title, file_path) values ('${piece}', ${piece === P3 ? `'${erhu}'` : 'null'}, '別人放的', '${path}') returning id`)).rows[0].id;
+  const foreign = [
+    await add(P3, `${P3}/${erhu}/123_web.pdf`),       // 網頁上傳到這首曲目的
+    await add(P3, llPath(P4, 'd')),                  // 這首曲目上、別首曲目的泠靈路徑
+    await add(P1, llPath(P1, 'e')),                  // 別首曲目上泠靈發的
+    (await as(A, `select id from scores where piece_id='${P1}' and file_path is null limit 1`)).rows[0].id,  // 別首曲目的
+  ];
+  for (const id of foreign) {
+    const r = await publish(A, { piece_id: P3, update_parts: [{ id: erhu, needed: '5' }], remove_scores: [mine, id] });
+    assert.match(r.error, /不能撤掉這筆樂譜登記/);
+    assert.equal(r.code, '22023');
+    assert.equal((await as(A, `select needed from piece_parts where id='${erhu}'`)).rows[0].needed, '4');
+    assert.equal((await as(A, `select 1 from scores where id in ('${mine}','${id}')`)).rows.length, 2);
+  }
+  await as(A, `delete from scores where id in (${foreign.slice(0, 3).map((id) => `'${id}'`).join(',')})`);
+});
+
+test('泠靈發譜：一份 Storage 檔只給一筆登記，已有登記指著的檔不能再登記', async () => {
+  const erhu = (await as(A, `select id from piece_parts where piece_id='${P3}' and name='二胡 I'`)).rows[0].id;
+  const pipa = (await as(A, `select id from piece_parts where piece_id='${P3}' and name='琵琶'`)).rows[0].id;
+  const r = await publish(A, { piece_id: P3, add_scores: [{ part_id: pipa, title: '琵琶', file_path: llPath(P3, 'c') }] });
+  assert.match(r.error, /已有樂譜登記這個檔/);
+  assert.equal(r.code, '23505');
+  assert.deepEqual((await as(A, `select part_id from scores where file_path='${llPath(P3, 'c')}'`)).rows.map((x) => x.part_id), [erhu]);
+});
+
+test('泠靈發譜：一個群組全成或全不成，任何一步失敗都不留下前面的寫入', async () => {
+  await upload(llPath(P4, 'a'));
+  const base = { piece_id: P4, new_piece: { title: '將軍令' }, create_parts: [{ name: '嗩吶', needed: '1', needed_min: 1, sort: 1 }],
+    add_scores: [{ new_part: '嗩吶', file_path: llPath(P4, 'a') }], attach_events: [E(4)] };
+  const failures = [
+    [{ add_scores: [...base.add_scores, { part_id: null, file_path: llPath(P4, 'f') }] }, /還沒傳到 Storage/, 'PT404'],
+    [{ add_scores: [{ part_id: null, file_path: `${P4}/full/123_x.pdf` }] }, /不是泠靈的樂譜路徑/, '22023'],
+    [{ add_scores: [{ part_id: null, file_path: `lingling/${P4}/${'a'.repeat(64)}.pdf` }] }, /不是泠靈的樂譜路徑/, '22023'],
+    [{ add_scores: [...base.add_scores, { part_id: null, file_path: llPath(P4, 'a') }] }, /已有樂譜登記這個檔/, '23505'],
+    [{ update_parts: [{ id: PT1, needed: '9' }] }, /找不到這首曲目的聲部/, 'PT404'],
+    [{ attach_events: [E(4), '55555555-5555-5555-5555-555555555550'] }, /foreign key/, '23503'],
+  ];
+  for (const [change, why, code] of failures) {
+    const r = await publish(A, { ...base, ...change });
+    assert.match(r.error, why);
+    assert.equal(r.code, code);
+    assert.equal((await as(A, `select 1 from pieces where id='${P4}'`)).rows.length, 0);
+    assert.equal((await as(A, `select 1 from piece_parts where piece_id='${P4}'`)).rows.length, 0);
+    assert.equal((await as(A, `select 1 from scores where piece_id='${P4}'`)).rows.length, 0);
+  }
+  assert.equal((await as(A, `select needed from piece_parts where id='${PT1}'`)).rows[0].needed, '1');
+});
+
+test('泠靈發譜：不是幹部會被 RLS 擋下，什麼都沒寫進去', async () => {
+  const r = await publish(B, { piece_id: P4, new_piece: { title: '將軍令' } });
+  assert.match(r.error, /row-level security/);
+  assert.equal(r.code, '42501');
+  assert.equal((await as(A, `select 1 from pieces where id='${P4}'`)).rows.length, 0);
+  assert.match((await publish(B, { piece_id: P1, attach_events: [E(4)] })).error, /row-level security/);
+  assert.match((await publish(B, { piece_id: P1, create_parts: [{ name: '高胡' }] })).error, /row-level security/);
+  assert.ok((await publish(B, { piece_id: P1, update_parts: [{ id: PT1, needed: '9' }] })).error);
+  assert.equal((await as(A, `select needed from piece_parts where id='${PT1}'`)).rows[0].needed, '1');
+  assert.equal((await as(A, `select 1 from event_pieces where piece_id='${P1}' and event_id='${E(4)}'`)).rows.length, 0);
 });

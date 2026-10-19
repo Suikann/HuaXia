@@ -871,3 +871,135 @@ create policy scores_read on storage.objects for select using (
     select 1 from public.scores s where s.file_path = storage.objects.name and public.can_read_score(s))));
 create policy scores_write on storage.objects for insert with check (bucket_id = 'scores' and public.is_officer());
 create policy scores_delete on storage.objects for delete using (bucket_id = 'scores' and public.is_officer());
+
+-- =====================================================================
+-- 泠靈（Ling Ling Suite）發譜函式（介面與依賴的欄位見 docs/LINGLING.md）
+-- =====================================================================
+-- 泠靈把一首曲目的發譜（新建曲目、建聲部、改人數與聲部組、登記新樂譜、撤掉舊樂譜的登記、掛場次）
+-- 一次交給這個函式：任何一步失敗，整次呼叫都不生效。以呼叫者身分執行（security invoker），
+-- 上面的 RLS 照常生效，不是幹部就寫不進去。改介面時要把 lingling_publish_version 加一。
+-- 錯誤代碼：PT409 版本不符、22023 輸入不對（含要撤的不是這首曲目泠靈發的樂譜）、PT404 找不到（PostgREST 依 PTxyz 回 HTTP xyz）、23505 檔案已有登記。
+create or replace function public.lingling_publish_version() returns int
+language sql immutable as $$ select 1 $$;
+
+create or replace function public.lingling_publish(payload jsonb) returns jsonb
+language plpgsql security invoker set search_path = public as $$
+declare
+  pid uuid := (payload->>'piece_id')::uuid;
+  np jsonb := payload->'new_piece';
+  piece_created boolean := false;
+  ll_path text := '^lingling/' || pid || '/[0-9a-f]{64}-[0-9a-z]{1,32}\.pdf$';  -- 這首曲目的泠靈路徑
+  x jsonb; score jsonb; v_part uuid; v_score uuid; n int;
+  new_parts jsonb := '{}';   -- 這次新建的聲部：名稱 → 編號
+  created jsonb := '[]'; added jsonb := '[]'; removed jsonb := '[]'; attached jsonb := '[]';
+begin
+  if coalesce((payload->>'version')::int, 0) <> public.lingling_publish_version() then
+    raise exception '泠靈的發譜介面版本 % 與 HuaXia 的 % 不符', payload->>'version', public.lingling_publish_version()
+      using errcode = 'PT409';
+  end if;
+  if pid is null then raise exception '缺少 piece_id' using errcode = '22023'; end if;
+
+  -- 曲目：new_piece 有值時新建（編號由泠靈先產生；已經存在就沿用，重跑不會多建一首）
+  if np is not null and jsonb_typeof(np) = 'object' then
+    insert into pieces (id, title, composer, duration_min, ensemble)
+    values (pid, np->>'title', coalesce(np->>'composer', ''), (np->>'duration_min')::numeric,
+            coalesce(np->>'ensemble', 'tutti'))
+    on conflict (id) do nothing;
+    get diagnostics n = row_count;
+    piece_created := n > 0;
+  end if;
+  if not exists (select 1 from pieces where id = pid) then
+    raise exception '找不到曲目 %', pid using errcode = 'PT404';
+  end if;
+
+  -- 新建聲部（聲部組空白時由觸發器依名稱判斷）
+  for x in select * from jsonb_array_elements(coalesce(payload->'create_parts', '[]')) loop
+    if new_parts ? (x->>'name') then
+      raise exception '同一次發譜新建了兩個「%」聲部', x->>'name' using errcode = '22023';
+    end if;
+    insert into piece_parts (piece_id, name, needed, needed_min, section, sort)
+    values (pid, x->>'name', coalesce(x->>'needed', '1'), coalesce((x->>'needed_min')::int, 1),
+            nullif(x->>'section', ''), coalesce((x->>'sort')::int, 0))
+    returning id into v_part;
+    new_parts := new_parts || jsonb_build_object(x->>'name', v_part);
+    created := created || jsonb_build_object('id', v_part, 'name', x->>'name');
+  end loop;
+
+  -- 改現有聲部的人數與聲部組（欄位省略或 null 就不改）
+  for x in select * from jsonb_array_elements(coalesce(payload->'update_parts', '[]')) loop
+    update piece_parts set
+      needed = coalesce(x->>'needed', needed),
+      needed_min = coalesce((x->>'needed_min')::int, needed_min),
+      section = case when x->>'section' is null then section else nullif(x->>'section', '') end
+    where id = (x->>'id')::uuid and piece_id = pid;
+    get diagnostics n = row_count;
+    if n = 0 then
+      raise exception '找不到這首曲目的聲部 %（可能已被刪除，或沒有權限）', x->>'id' using errcode = 'PT404';
+    end if;
+  end loop;
+
+  -- 撤掉舊樂譜的登記：只撤這首曲目泠靈發的（路徑是這首曲目的泠靈路徑）；指到別人放的或別首曲目的就整個不做，
+  -- 已經不在的略過，回傳實際撤掉的
+  select s.id into v_score from scores s
+  where s.id in (select jsonb_array_elements_text(coalesce(payload->'remove_scores', '[]'))::uuid)
+    and (s.piece_id <> pid or coalesce(s.file_path, '') !~ ll_path)
+  limit 1;
+  if v_score is not null then
+    raise exception '不能撤掉這筆樂譜登記（不是這首曲目泠靈發的）：%', v_score using errcode = '22023';
+  end if;
+  with gone as (
+    delete from scores
+    where piece_id = pid and id in (select jsonb_array_elements_text(coalesce(payload->'remove_scores', '[]'))::uuid)
+    returning id, scores.part_id, file_path
+  )
+  select coalesce(jsonb_agg(jsonb_build_object('id', id, 'part_id', gone.part_id, 'file_path', file_path)), '[]')
+    into removed from gone;
+
+  -- 登記新樂譜：檔案要先傳到 Storage，路徑是泠靈的格式 lingling/<曲目編號>/<SHA-256>-<登記位置>.pdf；
+  -- 一份 Storage 檔只給一筆登記（網頁刪樂譜時會連檔一起刪，共用的話會弄壞另一筆）
+  for x in select * from jsonb_array_elements(coalesce(payload->'add_scores', '[]')) loop
+    if x->>'part_id' is not null and x->>'new_part' is not null then
+      raise exception '樂譜只能指定 part_id 或 new_part 其中一個' using errcode = '22023';
+    end if;
+    v_part := case when x->>'new_part' is not null then (new_parts->>(x->>'new_part'))::uuid
+                    else (x->>'part_id')::uuid end;
+    if x->>'new_part' is not null and v_part is null then
+      raise exception '這次沒有新建「%」聲部', x->>'new_part' using errcode = '22023';
+    end if;
+    if v_part is not null and not exists (select 1 from piece_parts pp where pp.id = v_part and pp.piece_id = pid) then
+      raise exception '找不到這首曲目的聲部 %', v_part using errcode = 'PT404';
+    end if;
+    if coalesce(x->>'file_path', '') !~ ll_path then
+      raise exception '不是泠靈的樂譜路徑：%', x->>'file_path' using errcode = '22023';
+    end if;
+    if exists (select 1 from scores s where s.file_path = x->>'file_path') then
+      raise exception '已有樂譜登記這個檔：%', x->>'file_path' using errcode = '23505';
+    end if;
+    if not exists (select 1 from storage.objects o where o.bucket_id = 'scores' and o.name = x->>'file_path') then
+      raise exception '檔案還沒傳到 Storage：%', x->>'file_path' using errcode = 'PT404';
+    end if;
+    insert into scores (piece_id, part_id, title, file_path)
+    values (pid, v_part, coalesce(x->>'title', ''), x->>'file_path')
+    returning jsonb_build_object('id', id, 'part_id', scores.part_id, 'file_path', file_path) into score;
+    added := added || score;
+  end loop;
+
+  -- 掛場次（已經掛著的略過，回傳這次新掛上的）
+  with linked as (
+    insert into event_pieces (event_id, piece_id)
+    select e::uuid, pid from jsonb_array_elements_text(coalesce(payload->'attach_events', '[]')) e
+    on conflict do nothing
+    returning event_id
+  )
+  select coalesce(jsonb_agg(event_id), '[]') into attached from linked;
+
+  return jsonb_build_object('version', public.lingling_publish_version(), 'piece_id', pid,
+    'piece_created', piece_created, 'created_parts', created, 'added_scores', added,
+    'removed_scores', removed, 'attached_events', attached);
+end $$;
+
+-- Supabase 自 2026-10-30 起不再自動授權新物件：明寫只給登入的人呼叫
+revoke execute on function public.lingling_publish_version() from public, anon;
+revoke execute on function public.lingling_publish(jsonb) from public, anon;
+grant execute on function public.lingling_publish_version() to authenticated;
+grant execute on function public.lingling_publish(jsonb) to authenticated;

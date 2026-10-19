@@ -272,3 +272,10 @@ export function matchPart(fileName, parts, pieceTitle = '') {
   const hits = parts.filter((p) => normPart(p.name) && f.includes(normPart(p.name))).sort((a, b) => normPart(b.name).length - normPart(a.name).length);
   return hits[0]?.id || null;
 }
+
+// 按「連結 Discord」回來時，Supabase 把失敗原因放在網址（?error_code=… 與 #error_code=…）；認得的回傳要顯示的說明
+export const LINK_DISCORD_TAKEN = '這個 Discord 已經綁在另一個帳號上，請管理員先刪掉那個帳號。';
+export function linkErrorFromUrl(search, hash) {
+  const code = new URLSearchParams(search).get('error_code') || new URLSearchParams(hash.replace(/^#/, '')).get('error_code');
+  return code === 'identity_already_exists' ? LINK_DISCORD_TAKEN : null;
+}

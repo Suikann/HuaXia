@@ -164,3 +164,12 @@ test('需要人數自動換算至少幾人；檔名對到聲部', async () => {
   assert.equal(matchPart('新笛.pdf', parts), null);
   assert.equal(partNameFromFile('春天組曲_新笛.pdf', '春天組曲'), '新笛');
 });
+
+test('連結 Discord 回來時讀出「已經綁在另一個帳號」', async () => {
+  const { linkErrorFromUrl, LINK_DISCORD_TAKEN } = await import('../js/logic.js');
+  const q = 'error=server_error&error_code=identity_already_exists&error_description=Identity+is+already+linked+to+another+user';
+  assert.equal(linkErrorFromUrl('?' + q, '#' + q), LINK_DISCORD_TAKEN);
+  assert.equal(linkErrorFromUrl('', '#' + q), LINK_DISCORD_TAKEN);
+  assert.equal(linkErrorFromUrl('', '#/me'), null);
+  assert.equal(linkErrorFromUrl('?error_code=otp_expired', ''), null);
+});

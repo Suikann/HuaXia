@@ -1,13 +1,17 @@
 // 核心：連線、登入狀態、共用介面元件、路由
-import { perms, twParts, twWeekday, ROLE_LABEL } from './logic.js';
+import { perms, twParts, twWeekday, ROLE_LABEL, linkErrorFromUrl } from './logic.js';
 
 const cfg = window.HUAXIA_CONFIG || {};
 export const DEMO = new URLSearchParams(location.search).has('demo') || window.HUAXIA_DEMO === true;
 
 export let sb = null;
+// 連結 Discord 失敗回來時要顯示的說明；先讀走並清掉網址，Supabase 才會照常讀出原本的登入
+export let linkError = null;
 export async function connect() {
   if (DEMO) { sb = (await import('./mock.js')).createMock(); return true; }
   if (!cfg.url || !cfg.anonKey) return false;
+  linkError = linkErrorFromUrl(location.search, location.hash);
+  if (linkError) history.replaceState(null, '', location.pathname + '#/me');
   const { createClient } = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
   sb = createClient(cfg.url, cfg.anonKey);
   return true;

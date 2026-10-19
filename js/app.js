@@ -1,4 +1,4 @@
-import { sb, state, connect, loadMe, loadShared, render, esc, $, $$, toast, errText, me, DEMO, avatar, nameOf } from './core.js';
+import { sb, state, connect, loadMe, loadShared, render, esc, $, $$, toast, errText, me, DEMO, avatar, nameOf, linkError } from './core.js';
 import { mark } from './mark.js';
 import './views/home.js';
 import './views/events.js';
@@ -179,6 +179,7 @@ async function boot() {
     });
     window.addEventListener('hashchange', () => { if (isJoin()) return joinScreen(); if (!$('#main')) return boot(); if (state.profile?.status === 'active') render(); });
     await boot();
+    if (linkError) toast(linkError, 'bad');
   } catch (e) {
     console.error(e);
     $('#app').innerHTML = `<div class="auth"><div class="auth-card"><h1>載入失敗</h1><p class="muted">${esc(errText(e))}</p><button class="btn" onclick="location.reload()">重新整理</button></div></div>`;

@@ -13,6 +13,7 @@
 2. 左側 **SQL Editor → New query**，貼上 `supabase/schema.sql` 全部內容 → **Run**。出現 `Success` 就完成。
 3. 左側 **Authentication → Sign In / Providers**：
    - **Email**：保持開啟，**Confirm email 關掉**（免費方案寄不出確認信）。
+   - 同一頁的 **Allow manual linking** 打開。沒開的話「我的設定」的「連結 Discord」不能用：平常用 Email 登入的人沒辦法先綁 Discord，改用 Discord 登入時就會多出一個帳號。
 4. **Project Settings → API Keys**：記下 **Project URL** 與 **publishable key**（`sb_publishable_` 開頭），第 6 步要填。
 
 ## 2. Discord 登入

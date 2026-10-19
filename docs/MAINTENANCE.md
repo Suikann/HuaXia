@@ -37,7 +37,7 @@
 | 網站打開一直轉圈、或顯示「載入失敗」 | 資料庫休眠 | Supabase 後台 → 專案 → **Restore project**，約 2 分鐘恢復，資料不會不見 |
 | 收到 GitHub「保活與健康檢查」失敗的信 | 同上，或 Supabase 帳號／專案異常 | 先照上一列處理；還是不行就看信裡的錯誤訊息 |
 | 用 Discord 登入跳出一串程式碼 | Supabase 的 Discord 登入被關掉或設定跑掉 | Authentication → Sign In / Providers → Discord，確認開關打開並按 Save |
-| 同一個人變成兩個帳號 | 用 Email 和 Discord 各註冊一次 | 刪掉多的那個，請本人在「我的設定」按「連結 Discord」 |
+| 同一個人變成兩個帳號 | 用 Email 和 Discord 各註冊一次 | Supabase → **Authentication → Users** 找到多的那個（通常是用 Discord 登入、還在待核准的那個）→ 刪除。成員頁的「拒絕」只會把帳號停用、不會刪掉，Discord 仍綁在那個帳號上。刪掉後請本人在「我的設定」按「連結 Discord」 |
 | 有人忘記密碼 | 免費方案沒有寄信功能 | Supabase → Authentication → Users 刪掉該帳號，請他重新註冊，再核准一次 |
 | 改了網站但看到的還是舊版 | 瀏覽器快取 | 按 Ctrl+Shift+R（手機：關掉分頁重開） |
 | 資料被誤刪 | — | 用最近一次備份的 .json 還原（需要懂程式的人協助，備份檔裡每個表格的資料都完整保留） |
