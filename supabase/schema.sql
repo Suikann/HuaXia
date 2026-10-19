@@ -878,7 +878,7 @@ create policy scores_delete on storage.objects for delete using (bucket_id = 'sc
 -- 泠靈把一首曲目的發譜（新建曲目、建聲部、改人數與聲部組、登記新樂譜、撤掉舊樂譜的登記、掛場次）
 -- 一次交給這個函式：任何一步失敗，整次呼叫都不生效。以呼叫者身分執行（security invoker），
 -- 上面的 RLS 照常生效，不是幹部就寫不進去。改介面時要把 lingling_publish_version 加一。
--- 錯誤代碼：PT409 版本不符、22023 輸入不對、PT404 找不到（PostgREST 依 PTxyz 回 HTTP xyz）。
+-- 錯誤代碼：PT409 版本不符、22023 輸入不對、PT404 找不到（PostgREST 依 PTxyz 回 HTTP xyz）、23505 檔案已有登記。
 create or replace function public.lingling_publish_version() returns int
 language sql immutable as $$ select 1 $$;
 
@@ -946,7 +946,8 @@ begin
   select coalesce(jsonb_agg(jsonb_build_object('id', id, 'part_id', gone.part_id, 'file_path', file_path)), '[]')
     into removed from gone;
 
-  -- 登記新樂譜：檔案要先傳到 Storage，路徑是泠靈的格式 lingling/<曲目編號>/<SHA-256>.pdf
+  -- 登記新樂譜：檔案要先傳到 Storage，路徑是泠靈的格式 lingling/<曲目編號>/<SHA-256>-<登記位置>.pdf；
+  -- 一份 Storage 檔只給一筆登記（網頁刪樂譜時會連檔一起刪，共用的話會弄壞另一筆）
   for x in select * from jsonb_array_elements(coalesce(payload->'add_scores', '[]')) loop
     if x->>'part_id' is not null and x->>'new_part' is not null then
       raise exception '樂譜只能指定 part_id 或 new_part 其中一個' using errcode = '22023';
@@ -959,8 +960,11 @@ begin
     if v_part is not null and not exists (select 1 from piece_parts pp where pp.id = v_part and pp.piece_id = pid) then
       raise exception '找不到這首曲目的聲部 %', v_part using errcode = 'PT404';
     end if;
-    if coalesce(x->>'file_path', '') !~ ('^lingling/' || pid || '/[0-9a-f]{64}\.pdf$') then
+    if coalesce(x->>'file_path', '') !~ ('^lingling/' || pid || '/[0-9a-f]{64}-[0-9a-z]{1,32}\.pdf$') then
       raise exception '不是泠靈的樂譜路徑：%', x->>'file_path' using errcode = '22023';
+    end if;
+    if exists (select 1 from scores s where s.file_path = x->>'file_path') then
+      raise exception '已有樂譜登記這個檔：%', x->>'file_path' using errcode = '23505';
     end if;
     if not exists (select 1 from storage.objects o where o.bucket_id = 'scores' and o.name = x->>'file_path') then
       raise exception '檔案還沒傳到 Storage：%', x->>'file_path' using errcode = 'PT404';

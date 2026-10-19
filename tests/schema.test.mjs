@@ -289,7 +289,7 @@ test('總譜：絲竹曲目大家都看得到；大團曲目只有組長、聲�
 
 // ---------- 泠靈發譜函式（docs/LINGLING.md） ----------
 const P3 = '22222222-2222-2222-2222-222222222223', P4 = '22222222-2222-2222-2222-222222222224';
-const llPath = (piece, c) => `lingling/${piece}/${c.repeat(64)}.pdf`;
+const llPath = (piece, c, slot = 'score') => `lingling/${piece}/${c.repeat(64)}-${slot}.pdf`;
 const publish = (uid, payload) => as(uid, `select lingling_publish('${JSON.stringify({ version: 1, ...payload }).replace(/'/g, "''")}'::jsonb) as r`);
 const upload = (...paths) => db.exec(`insert into storage.objects (bucket_id, name) values ${paths.map((p) => `('scores','${p}')`).join(',')}`);
 
@@ -349,6 +349,15 @@ test('泠靈發譜：改人數與聲部組、取代樂譜；只撤這首曲目�
   assert.deepEqual((await as(A, `select file_path from scores where part_id='${erhu}'`)).rows.map((x) => x.file_path), [llPath(P3, 'c')]);
 });
 
+test('泠靈發譜：一份 Storage 檔只給一筆登記，已有登記指著的檔不能再登記', async () => {
+  const erhu = (await as(A, `select id from piece_parts where piece_id='${P3}' and name='二胡 I'`)).rows[0].id;
+  const pipa = (await as(A, `select id from piece_parts where piece_id='${P3}' and name='琵琶'`)).rows[0].id;
+  const r = await publish(A, { piece_id: P3, add_scores: [{ part_id: pipa, title: '琵琶', file_path: llPath(P3, 'c') }] });
+  assert.match(r.error, /已有樂譜登記這個檔/);
+  assert.equal(r.code, '23505');
+  assert.deepEqual((await as(A, `select part_id from scores where file_path='${llPath(P3, 'c')}'`)).rows.map((x) => x.part_id), [erhu]);
+});
+
 test('泠靈發譜：一個群組全成或全不成，任何一步失敗都不留下前面的寫入', async () => {
   await upload(llPath(P4, 'a'));
   const base = { piece_id: P4, new_piece: { title: '將軍令' }, create_parts: [{ name: '嗩吶', needed: '1', needed_min: 1, sort: 1 }],
@@ -356,6 +365,8 @@ test('泠靈發譜：一個群組全成或全不成，任何一步失敗都不�
   const failures = [
     [{ add_scores: [...base.add_scores, { part_id: null, file_path: llPath(P4, 'f') }] }, /還沒傳到 Storage/, 'PT404'],
     [{ add_scores: [{ part_id: null, file_path: `${P4}/full/123_x.pdf` }] }, /不是泠靈的樂譜路徑/, '22023'],
+    [{ add_scores: [{ part_id: null, file_path: `lingling/${P4}/${'a'.repeat(64)}.pdf` }] }, /不是泠靈的樂譜路徑/, '22023'],
+    [{ add_scores: [...base.add_scores, { part_id: null, file_path: llPath(P4, 'a') }] }, /已有樂譜登記這個檔/, '23505'],
     [{ update_parts: [{ id: PT1, needed: '9' }] }, /找不到這首曲目的聲部/, 'PT404'],
     [{ attach_events: [E(4), '55555555-5555-5555-5555-555555555550'] }, /foreign key/, '23503'],
   ];
