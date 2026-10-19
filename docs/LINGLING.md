@@ -22,7 +22,7 @@
 | `user_roles` | — | 不直接讀，經 `is_officer()` |
 | `pieces` | `id`、`title`、`composer`、`duration_min`、`ensemble`、`archived` | 讀沒封存的曲目讓譜務挑。新建時寫 `id`（泠靈先產生）、`title`、`composer`、`duration_min`（分鐘，0.5 為一級，同網頁表單）、`ensemble`（`tutti`／`sizhu`）。不改現有曲目、不封存、不刪曲目 |
 | `piece_parts` | `id`、`piece_id`、`name`、`needed`、`needed_min`、`section`、`sort` | 讀這幾首曲目的聲部，以名稱對到泠靈的聲部。新建時寫這些欄位；現有聲部只改 `needed`、`needed_min`、`section`。`needed` 是記法 `6`、`6-8`、`2↑`，`needed_min` 是最少人數；`section` 只寫五組之一，空白交給觸發器 `guess_section`。不改名稱、不碰 `tutor_id`、`note`，發譜**永遠不刪聲部** |
-| `part_assignments` | `part_id` | 讀。撤回時判斷那次新建的聲部有沒有排人；泠靈不寫 |
+| `part_assignments` | `id`、`part_id` | 讀。撤回時判斷那次新建的聲部有沒有排人（依 `id` 排序分頁）；泠靈不寫 |
 | `scores` | `id`、`piece_id`、`part_id`、`title`、`file_path`、`section`、`created_at` | 讀這幾首曲目的樂譜，依 `file_path` 分出哪份是泠靈發的。`part_id` 為 null 且 `section` 為 null 是總譜；泠靈登記的 `section` 一律為 null。登記新樂譜、撤掉被取代的登記；網頁上傳的（不是泠靈路徑的）只在收回時刪 |
 | `semesters` | `id`、`is_current` | 讀本學期 |
 | `events` | `id`、`semester_id`、`title`、`starts_at`、`ends_at`、`kinds`、`location` | 讀本學期、還沒結束、類型含 `concert` 的場次讓譜務勾；公演結束時間用來提醒收回。不新增、不改場次 |
