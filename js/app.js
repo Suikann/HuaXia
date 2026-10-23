@@ -36,7 +36,7 @@ const TABS = [
 const MENU = [
   { path: '/me', label: '我的設定', group: '個人' },
   { path: '/attendance', label: '出席明細', group: '個人', show: (p) => !p.ringerOnly },
-  { path: '/members', label: '成員', group: '幹部', show: (p) => p.officer },
+  { path: '/members', label: '成員', group: '社團', show: (p) => p.insider },
   { path: '/ringers', label: '槍手', group: '幹部', show: (p) => p.officer },
   { path: '/recruit', label: '招生', group: '幹部', show: (p) => p.officer },
   { path: '/settings', label: '系統設定', group: '幹部', show: (p) => p.admin },
