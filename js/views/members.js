@@ -111,7 +111,7 @@ route('/members', async () => {
     `<div class="seg wrap"><button data-mf="" aria-pressed="${!f}">全部</button>${SECTIONS.map((s) => `<button data-mf="${s}" aria-pressed="${f === s}">${s}</button>`).join('')}<button data-mf="officer" aria-pressed="${f === 'officer'}">幹部</button><button data-mf="ringer" aria-pressed="${f === 'ringer'}">槍手</button><button data-mf="alumni" aria-pressed="${f === 'alumni'}">校友</button></div>` +
     (list.length ? `<div class="tbl-wrap"><table class="${p.officer || batch ? 'click' : ''}"><thead><tr><th>成員</th><th>組別</th><th>樂器</th><th>身分</th>${p.officer ? '<th>Email</th>' : ''}</tr></thead><tbody>
       ${list.map((u) => `<tr data-member="${u.id}" class="${u.status === 'inactive' ? 'inactive' : ''}"><td><span class="person">${box(u.id)}${avatar(u.id, 24)}<b>${esc(nameOf(u.id))}</b>${u.real_name && u.real_name !== u.display_name ? `<span class="muted small">${esc(u.real_name)}</span>` : ''}</span></td>
-        <td>${sectionChip(u.section)}</td><td class="small">${esc(u.instruments)}</td><td class="chips">${roleChips(u.roles)}${u.officer_title ? `<span class="chip gold">${esc(u.officer_title)}</span>` : ''}</td>
+        <td>${sectionChip(u.section)}</td><td class="small">${esc(u.instruments)}</td><td><div class="chips">${roleChips(u.roles)}${u.officer_title ? `<span class="chip gold">${esc(u.officer_title)}</span>` : ''}</div></td>
         ${p.officer ? `<td class="small muted">${esc(privOf(u.id)?.email || '')}</td>` : ''}</tr>`).join('')}
     </tbody></table></div>` : empty('這個分類沒有成員'));
 });

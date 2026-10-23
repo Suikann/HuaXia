@@ -580,3 +580,8 @@ input.pick { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); 
 .row-start { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
 .ok-t { color: var(--ok); }
 .hero .btn.line.ok { border-color: var(--ok); color: var(--ok); }
+
+/* 教學班成員（公告 › 教學班） */
+.class-roster + .class-roster { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 12px; }
+.class-roster h3 { font-size: 16px; margin-bottom: 6px; }
+.class-roster p { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; margin-bottom: 6px; }

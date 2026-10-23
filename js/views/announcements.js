@@ -1,6 +1,6 @@
 import { sb, state, me, route, esc, run, formDialog, pageHead, empty, chipPerson, fmtDate, fmtTime, render, $, $$, toast, activePeople, nameOf } from '../core.js';
 import { SECTIONS, twParts, twWeekday, twToIso } from '../logic.js';
-import { invokeFn, eventCard } from './events.js';
+import { invokeFn } from './events.js';
 import { toolsBody, addToolBtn } from './tools.js';
 
 // 公告分類（存在 announcements.channel）。open = 所有社員都能發（只能改自己的）
@@ -113,15 +113,22 @@ export function mentionLine(a) {
   return `<p class="mentions">${a.mention_all ? '<span class="at">@全體絲竹成員</span>' : ''}${ids.map((id) => `<span class="at ${id === me() ? 'me' : ''}">@${esc(nameOf(id))}</span>`).join('')}</p>`;
 }
 
+// 教學班與學員（目前學期）
+async function classRoster() {
+  let q = sb.from('classes').select('*').order('name');
+  if (state.semester) q = q.eq('semester_id', state.semester.id);
+  const [{ data: cs }, { data: st }] = await Promise.all([q, sb.from('class_students').select('*')]);
+  return (cs || []).map((c) => ({ ...c, students: (st || []).filter((x) => x.class_id === c.id).map((x) => x.user_id) }));
+}
+
 async function annPage() {
   if (sessionStorage.getItem('af') === 'tools') sessionStorage.setItem('af', 'class');
   const f = CATS[sessionStorage.getItem('af')] ? sessionStorage.getItem('af') : '';
-  const nowIso = new Date(Date.now() - 3 * 3600e3).toISOString();
   ROSTER = await sizhuRoster();
-  const [{ data }, { data: reads }, evs] = await Promise.all([
+  const [{ data }, { data: reads }, classes] = await Promise.all([
     sb.from('announcements').select('*').order('created_at', { ascending: false }).limit(200),
     sb.from('announcement_reads').select('ann_id').eq('user_id', me()),
-    f === 'sizhu' ? sb.from('events').select('*').contains('kinds', ['sizhu']).gte('starts_at', nowIso).order('starts_at').limit(6) : { data: [] },
+    f === 'class' ? classRoster() : [],
   ]);
   const read = new Set((reads || []).map((r) => r.ann_id));
   let list = (data || []).filter((a) => !f || catOf(a) === f);
@@ -132,6 +139,7 @@ async function annPage() {
     $$('[data-edit-ann]').forEach((b) => (b.onclick = () => editAnn(list.find((x) => x.id === b.dataset.editAnn))));
     $$('[data-af]').forEach((b) => (b.onclick = () => { sessionStorage.setItem('af', b.dataset.af); render(); }));
     $('#edit-roster')?.addEventListener('click', editRoster);
+    $('#go-teach')?.addEventListener('click', () => sessionStorage.setItem('grp', '教學班'));
     $('#past-toggle')?.addEventListener('click', () => { sessionStorage.setItem('cpast', sessionStorage.getItem('cpast') === '1' ? '0' : '1'); render(); });
   });
   const canAdd = postable().length > 0;
@@ -152,10 +160,14 @@ async function annPage() {
   list = list.sort((a, b) => (b.pinned - a.pinned) || (b.created_at > a.created_at ? 1 : -1));
   const sizhuTop = f === 'sizhu' ? `<section class="card"><div class="card-head"><h2>絲竹成員 <span class="muted small">${ROSTER.length} 人</span></h2>${state.p.officer ? '<button class="btn sm" id="edit-roster">編輯名單</button>' : ''}</div>
     ${ROSTER.length ? `<div class="tags people">${ROSTER.map((id) => chipPerson(id, id === me() ? 'me' : '')).join('')}</div>` : `<p class="small muted">${state.p.officer ? '按「編輯名單」勾選有參加絲竹的人，對象選「絲竹」時就會提醒他們。' : '幹部還沒設定絲竹名單。'}</p>`}</section>
-    <section class="card"><div class="card-head"><h2>接下來的絲竹排練</h2><a class="link" href="#/events">行事曆</a></div>
-    ${evs.data?.length ? `<div class="ev-list">${evs.data.map((e) => eventCard(e)).join('')}</div>` : '<p class="small muted">目前沒有排定的絲竹排練。幹部在「行事曆」新增時類型勾「絲竹」，就會出現在這裡。</p>'}</section>` : '';
+` : '';
+  const classTop = f === 'class' ? `<section class="card"><div class="card-head"><h2>教學班成員</h2>${state.p.canTeach ? '<a class="link" href="#/groups" id="go-teach">管理教學班</a>' : ''}</div>
+    ${classes.length ? classes.map((c) => `<div class="class-roster"><h3>${esc(c.name)}${c.instrument ? ` <span class="muted small">${esc(c.instrument)}</span>` : ''}</h3>
+      ${c.teacher_ids?.length ? `<p class="small"><span class="muted">帶課：</span>${c.teacher_ids.map((id) => chipPerson(id, id === me() ? 'me' : '')).join('')}</p>` : ''}
+      <div class="tags people">${c.students.length ? c.students.map((id) => chipPerson(id, id === me() ? 'me' : '')).join('') : '<span class="small muted">還沒有學員</span>'}</div></div>`).join('')
+      : `<p class="small muted">${state.p.canTeach ? '到「各組 › 教學班」新增教學班與學員。' : '幹部還沒建立教學班。'}</p>`}</section>` : '';
   const toolsTop = f === 'class' ? `<section class="card"><div class="card-head"><h2>練習工具</h2>${addToolBtn().replace('btn pri', 'btn sm')}</div>${toolsBody()}</section>` : '';
-  return head + seg + sizhuTop + toolsTop + (list.length ? listHtml(list) : empty(f ? `目前沒有「${CATS[f].label}」的公告` : '目前沒有公告', canAdd ? '按右上角的按鈕發布。' : ''));
+  return head + seg + sizhuTop + classTop + toolsTop + (list.length ? listHtml(list) : empty(f ? `目前沒有「${CATS[f].label}」的公告` : '目前沒有公告', canAdd ? '按右上角的按鈕發布。' : ''));
 }
 
 async function editRoster() {
