@@ -65,7 +65,7 @@ export async function loadShared() {
     sb.from('semesters').select('*').order('starts_on', { ascending: false }),
     sb.from('settings').select('*'),
     sb.from('calendars').select('*').order('sort'),
-    sb.from('profiles').select('id, display_name, real_name, section, instruments, avatar_url, status, officer_title, school, grade'),
+    sb.from('profiles').select('id, display_name, real_name, section, sections, instruments, avatar_url, status, officer_title, school, grade'),
     sb.from('user_roles').select('*'),
   ]);
   state.semesters = sem.data || [];
@@ -95,6 +95,9 @@ export function avatar(id, size = 24) {
   return `<span class="av av-txt" style="width:${size}px;height:${size}px;font-size:${Math.round(size * 0.45)}px">${esc(n.slice(-2))}</span>`;
 }
 export const chipPerson = (id, extra = '') => `<span class="person ${extra}">${avatar(id, 20)}${esc(nameOf(id))}</span>`;
+// 一個人的組別（可能好幾組）
+export const secsOf = (u) => (u?.sections?.length ? u.sections : u?.section ? [u.section] : []);
+export const mySecs = () => secsOf(state.profile);
 export const sectionChip = (s) => s ? `<span class="sec sec-${esc(s)}">${esc(s)}</span>` : '';
 export const roleChips = (roles) => roles.filter((r) => r !== 'member').map((r) => `<span class="chip role-${r}">${ROLE_LABEL[r]}</span>`).join('');
 

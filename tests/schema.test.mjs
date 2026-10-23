@@ -337,6 +337,25 @@ test('公告照片：只能上傳到自己的資料夾；看得到那則公告�
   }
 });
 
+test('一個人可以同時在好幾組：分部課、組內公告、組長排人都算進去', async () => {
+  const C = '00000000-0000-0000-0000-00000000000d';
+  await db.exec(`insert into auth.users values ('${C}','c@x','{"name":"阿C"}')`);
+  await as(A, `update profiles set status='active', sections=array['彈撥','打擊'] where id='${C}'; insert into user_roles values ('${C}','member')`);
+  assert.equal((await as(A, `select section from profiles where id='${C}'`)).rows[0].section, '彈撥');   // 主要組別＝第一組
+  assert.ok((await as(C, `update profiles set sections=array['吹管'] where id='${C}'`)).error);          // 自己不能改組別
+  // 分部課：打擊的也要到
+  const EV = '55555555-5555-5555-5555-5555555555b1';
+  await as(A, `insert into events (id,semester_id,kinds,sections,title,starts_at,ends_at,calendar_key) values ('${EV}','${S}',array['sectional'],array['打擊'],'打擊分部','2026-11-22 10:00+08','2026-11-22 12:00+08','tutti')`);
+  assert.equal((await as(A, `select public.is_expected(e, '${C}') as ok from events e where e.id='${EV}'`)).rows[0].ok, true);
+  // 組內公告：發給打擊組的也看得到
+  await as(A, `insert into announcements (channel,title,audience,section) values ('tutti','打擊組公告','section','打擊')`);
+  assert.equal((await as(C, `select 1 from announcements where title='打擊組公告'`)).rows.length, 1);
+  assert.equal((await as(B, `select 1 from announcements where title='打擊組公告'`)).rows.length, 0);  // 拉弦的看不到
+  // 舊版畫面只改 section：sections 跟著換
+  await as(A, `update profiles set section='低音' where id='${C}'`);
+  assert.deepEqual((await as(A, `select sections from profiles where id='${C}'`)).rows[0].sections, ['低音']);
+});
+
 const upload = (...paths) => db.exec(`insert into storage.objects (bucket_id, name) values ${paths.map((p) => `('scores','${p}')`).join(',')}`);
 
 test('泠靈發譜：版本查詢；登入的人才能呼叫，版本不符時整個不做', async () => {

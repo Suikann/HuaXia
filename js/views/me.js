@@ -1,3 +1,4 @@
+import { secsOf } from '../core.js';
 import { sb, state, me, route, esc, run, toast, pageHead, avatar, nameOf, sectionChip, roleChips, render, $, $$, loadShared, discordAvatar, getTheme, setTheme } from '../core.js';
 import { calendarsFor, LINK_DISCORD_TAKEN } from '../logic.js';
 
@@ -27,7 +28,7 @@ async function saveAvatar(value, okMsg) {
 route('/me', async () => {
   const u = state.profile;
   const { data: priv } = await sb.from('profile_private').select('*').eq('user_id', me()).maybeSingle();
-  const cals = calendarsFor(state.calendars, state.p, u?.section);
+  const cals = calendarsFor(state.calendars, state.p, secsOf(u));
   // 幹部行事曆沒有公開，Apple 只能訂閱公開的那幾個
   const apple = cals.filter((c) => c.audience !== 'officers');
   const ids = (await sb.auth.getUserIdentities().catch(() => null))?.data?.identities || [];
@@ -59,7 +60,7 @@ route('/me', async () => {
     });
   });
   return pageHead('我的設定') +
-    `<section class="card me-head">${avatar(me(), 56)}<div><h2>${esc(nameOf(me()))}</h2><div class="chips">${sectionChip(u?.section)}${roleChips(state.roles)}${u?.officer_title ? `<span class="chip gold">${esc(u.officer_title)}</span>` : ''}</div></div>
+    `<section class="card me-head">${avatar(me(), 56)}<div><h2>${esc(nameOf(me()))}</h2><div class="chips">${secsOf(u).map(sectionChip).join('')}${roleChips(state.roles)}${u?.officer_title ? `<span class="chip gold">${esc(u.officer_title)}</span>` : ''}</div></div>
       <div class="actions"><button class="btn ghost" id="logout">登出</button></div>
       <div class="avatar-acts"><button class="btn sm" id="pick-avatar">更換頭像</button>${canUseDc ? '<button class="btn sm ghost" id="use-dc-avatar">使用 Discord 頭像</button>' : ''}${u?.avatar_url ? '<button class="btn sm ghost" id="del-avatar">移除頭像</button>' : ''}
         <input type="file" id="avatar-file" accept="image/*" hidden></div></section>

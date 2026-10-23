@@ -11,10 +11,10 @@ const ME = uid(1);
 
 function fixtures() {
   const P = [
-    ...R.members.map((m) => [m.n, m.name, m.section, m.instruments, m.roles, m.title]),
+    ...R.members.map((m) => [m.n, m.name, m.sections, m.instruments, m.roles, m.title]),
     [11, '蘇晏', null, '中阮', ['ringer'], ''], [12, '何老師', null, '指揮', ['teacher'], ''],
   ];
-  const profiles = P.map(([n, name, section, ins, , title]) => ({ id: uid(n), display_name: name, real_name: name, section, instruments: ins, status: 'active', officer_title: title, avatar_url: null, school: n === 11 ? '師大' : '', grade: '', bio: '' }));
+  const profiles = P.map(([n, name, secs, ins, , title]) => ({ id: uid(n), display_name: name, real_name: name, section: (secs || [])[0] || null, sections: secs || [], instruments: ins, status: 'active', officer_title: title, avatar_url: null, school: n === 11 ? '師大' : '', grade: '', bio: '' }));
   profiles.push({ id: uid(13), display_name: '新朋友', real_name: '', section: null, instruments: '', status: 'pending', officer_title: '', school: '', grade: '', bio: '' });
   const user_roles = P.flatMap(([n, , , , roles]) => roles.map((role) => ({ user_id: uid(n), role })));
   const pieces = [['p1', '泰芙努特', '刁鵬', 6], ['p2', '神遊浯洲醉金城', '朱雲嵩', 10.5], ['p3', '春天組曲（一、三、四）', '顧冠仁', 12], ['p4', '留傘調新編', '', 5.5]]
@@ -169,7 +169,7 @@ function expected(e, id) {
   if (!e.counts_attendance) return false;
   if (!roles.some((r) => ['admin', 'officer', 'leader', 'member', 'newbie'].includes(r))) return false;
   const p = DB.profiles.find((x) => x.id === id);
-  if (e.kind === 'sectional') return (e.sections?.length ? e.sections : [e.section]).includes(p?.section);
+  if (e.kind === 'sectional') return (e.sections?.length ? e.sections : [e.section]).some((s) => (p?.sections?.length ? p.sections : [p?.section]).includes(s));
   if (e.kind === 'class') return DB.class_students.some((s) => s.class_id === e.class_id && s.user_id === id);
   const eps = DB.event_pieces.filter((x) => x.event_id === e.id).map((x) => x.piece_id);
   if (!eps.length) return true;

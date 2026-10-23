@@ -1,4 +1,5 @@
 // 各組（2026-10 改版）：五個組別＋教學班。每組看成員、分部課、組內公告、出席率。
+import { secsOf, mySecs } from '../core.js';
 import { sb, state, me, route, esc, pageHead, empty, avatar, nameOf, fmtDate, render, $$ } from '../core.js';
 import { SECTIONS, rateLevel } from '../logic.js';
 import { eventCard } from './events.js';
@@ -10,12 +11,12 @@ const pct = (r) => r == null ? '<span class="muted">—</span>' : `<span class="
 function pickTab() {
   const saved = sessionStorage.getItem('grp');
   if (saved && (SECTIONS.includes(saved) || saved === TEACH)) return saved;
-  return SECTIONS.includes(state.profile?.section) ? state.profile.section : SECTIONS[0];
+  return mySecs().find((s) => SECTIONS.includes(s)) || SECTIONS[0];
 }
 
 async function sectionView(sec) {
   const p = state.p;
-  const members = [...state.people.values()].filter((u) => u.status === 'active' && u.section === sec)
+  const members = [...state.people.values()].filter((u) => u.status === 'active' && secsOf(u).includes(sec))
     .sort((a, b) => (b.roles.includes('leader') - a.roles.includes('leader')) || nameOf(a.id).localeCompare(nameOf(b.id), 'zh-Hant'));
   const leaders = members.filter((u) => u.roles.includes('leader'));
   const nowIso = new Date(Date.now() - 3 * 3600e3).toISOString();
@@ -29,7 +30,7 @@ async function sectionView(sec) {
   const rated = secStats.filter((s) => s.current_rate != null);
   const avg = rated.length ? rated.reduce((a, b) => a + Number(b.current_rate), 0) / rated.length : null;
   const statOf = new Map(secStats.map((s) => [s.user_id, s]));
-  const canSeeAll = p.officer || state.profile?.section === sec;
+  const canSeeAll = p.officer || mySecs().includes(sec);
 
   return `<section class="grp-hero sec-${esc(sec)}"><div>
       <h2>${esc(sec)}組</h2>

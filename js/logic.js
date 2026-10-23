@@ -50,7 +50,7 @@ export function calendarsFor(calendars, p, section) {
     if (c.audience === 'officers') return p.officer;
     if (c.audience === 'ringers') return p.ringerOnly;
     if (p.ringerOnly) return false;
-    if (c.audience === 'section') return p.officer || c.section === section;
+    if (c.audience === 'section') return p.officer || (Array.isArray(section) ? section : [section]).includes(c.section);
     if (c.audience === 'class') return p.newbie || p.canTeach;
     return true;
   });

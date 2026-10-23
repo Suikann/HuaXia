@@ -102,7 +102,7 @@ async function editAnn(a = null, preset = '') {
     { name: 'venue', label: '地點', value: a?.venue, placeholder: '例：國家音樂廳、中山堂', only: ['concerts'] },
     { name: 'link', label: '連結', type: 'url', value: a?.link, placeholder: 'https://（購票頁、影片、樂譜…）', only: ['concerts', 'resources'], full: true },
     { name: 'body', label: '內容', type: 'textarea', rows: 5, value: a?.body, full: true },
-    { name: 'photos', label: `照片（最多 ${PHOTO_MAX} 張）`, type: 'photos', full: true, value: (a?.photos || []).map((path) => ({ path, url: oldUrls.get(path) || '' })) },
+    { name: 'photos', label: `照片／海報（最多 ${PHOTO_MAX} 張）`, type: 'photos', full: true, value: (a?.photos || []).map((path) => ({ path, url: oldUrls.get(path) || '' })) },
   );
   if (officer) fields.push(
     { name: 'mentions', label: '另外標記這些人（選填）', type: 'checks', full: true, value: a?.mentions || [], only: officerOnly,

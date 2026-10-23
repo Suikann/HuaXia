@@ -1,3 +1,4 @@
+import { secsOf } from '../core.js';
 import { sb, state, me, route, esc, pageHead, empty, fmtDate, chipPerson, nameOf, sectionChip, render, $, $$ } from '../core.js';
 import { ATT_LABEL, KIND_LABEL, LEAVE_LABEL, SECTIONS, rateLevel } from '../logic.js';
 import { rateRing } from './home.js';
@@ -24,10 +25,10 @@ route('/attendance', async () => {
   const mine = stats.find((s) => s.user_id === me());
   const others = stats.filter((s) => s.user_id !== me());
   const secF = sessionStorage.getItem('attSec') || '';
-  const shown = others.filter((s) => !secF || state.people.get(s.user_id)?.section === secF)
+  const shown = others.filter((s) => !secF || secsOf(state.people.get(s.user_id)).includes(secF))
     .sort((a, b) => (a.current_rate ?? 999) - (b.current_rate ?? 999));
   const bySec = SECTIONS.map((s) => {
-    const l = stats.filter((x) => state.people.get(x.user_id)?.section === s && x.current_rate != null);
+    const l = stats.filter((x) => secsOf(state.people.get(x.user_id)).includes(s) && x.current_rate != null);
     return [s, l.length ? l.reduce((a, b) => a + Number(b.current_rate), 0) / l.length : null, l.length];
   });
   setTimeout(() => {
