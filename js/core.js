@@ -5,8 +5,20 @@ const cfg = window.HUAXIA_CONFIG || {};
 export const DEMO = new URLSearchParams(location.search).has('demo') || window.HUAXIA_DEMO === true;
 
 export let sb = null;
+
 // 連結 Discord 失敗回來時要顯示的說明；先讀走並清掉網址，Supabase 才會照常讀出原本的登入
 export let linkError = null;
+
+// 示範模式的身分切換
+export const DEMO_ROLES = {
+  admin: { label: '社長（管理員）', roles: ['admin', 'member'] },
+  officer: { label: '幹部', roles: ['officer', 'member'] },
+  leader: { label: '組長', roles: ['leader', 'member'] },
+  member: { label: '一般社員', roles: ['member'] },
+  newbie: { label: '新生', roles: ['newbie', 'member'] },
+  ringer: { label: '槍手（外校支援）', roles: ['ringer'] },
+};
+export function demoAs() { try { return sessionStorage.getItem('demo-as') || 'admin'; } catch { return 'admin'; } }
 export async function connect() {
   if (DEMO) { sb = (await import('./mock.js')).createMock(); return true; }
   if (!cfg.url || !cfg.anonKey) return false;
@@ -31,6 +43,8 @@ export async function loadMe() {
   ]);
   state.profile = profile;
   state.roles = (roles || []).map((r) => r.role);
+  // 示範模式可以切換身分，看看不同人看到的畫面
+  if (DEMO) { const as = demoAs(); if (as && DEMO_ROLES[as]) { state.roles = DEMO_ROLES[as].roles; if (!['admin', 'officer'].includes(as) && profile) profile.officer_title = ''; } }
   state.p = perms(state.roles, profile?.status === 'active');
   // 用 Email 登入但綁過 Discord、還沒有頭像的人：自動換成 DC 頭像
   if (profile && !profile.avatar_url) {
@@ -83,6 +97,15 @@ export function avatar(id, size = 24) {
 export const chipPerson = (id, extra = '') => `<span class="person ${extra}">${avatar(id, 20)}${esc(nameOf(id))}</span>`;
 export const sectionChip = (s) => s ? `<span class="sec sec-${esc(s)}">${esc(s)}</span>` : '';
 export const roleChips = (roles) => roles.filter((r) => r !== 'member').map((r) => `<span class="chip role-${r}">${ROLE_LABEL[r]}</span>`).join('');
+
+// ---------- 外觀：system（跟隨系統）／light／dark，存在這台裝置 ----------
+export function getTheme() { try { return localStorage.getItem('hx-theme') || 'system'; } catch { return 'system'; } }
+export function setTheme(t) {
+  try { if (t === 'system') localStorage.removeItem('hx-theme'); else localStorage.setItem('hx-theme', t); } catch { }
+  if (t === 'system') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = t;
+  const color = { light: '#f7f5f2', dark: '#313338' }[t];
+  document.querySelectorAll('meta[name="theme-color"]').forEach((m) => { if (color) { m.content = color; } else m.content = m.media.includes('light') ? '#f7f5f2' : '#313338'; });
+}
 
 // ---------- 通知 ----------
 export function toast(msg, kind = '') {

@@ -266,6 +266,19 @@ drop trigger if exists events_kinds on public.events;
 create trigger events_kinds before insert or update on public.events for each row execute function public.events_kinds();
 update public.events set kinds = array[kind] where cardinality(kinds) = 0;
 
+-- 分部課可以好幾組一起上（例：彈撥＋低音）；section 自動等於第一組，給只看單一組別的地方用
+alter table public.events add column if not exists sections text[] not null default '{}'
+  check (sections <@ array['吹管','拉弦','彈撥','打擊','低音']::text[]);
+create or replace function public.events_sections() returns trigger language plpgsql as $$
+begin
+  if (new.sections is null or cardinality(new.sections) = 0) and new.section is not null then new.sections := array[new.section]; end if;
+  new.section := case when cardinality(new.sections) > 0 then new.sections[1] else null end;
+  return new;
+end $$;
+drop trigger if exists events_sections on public.events;
+create trigger events_sections before insert or update on public.events for each row execute function public.events_sections();
+update public.events set sections = array[section] where cardinality(sections) = 0 and section is not null;
+
 create table if not exists public.event_pieces (
   event_id uuid references public.events(id) on delete cascade,
   piece_id uuid references public.pieces(id) on delete cascade,
@@ -280,6 +293,10 @@ create table if not exists public.leave_requests (
   created_at timestamptz not null default now(),
   primary key (event_id, user_id)
 );
+
+-- 「出席」確認也存在這張表（type = 'attend'）：事先按了會到，點名時預設帶「出席」
+alter table public.leave_requests drop constraint if exists leave_requests_type_check;
+alter table public.leave_requests add constraint leave_requests_type_check check (type in ('leave','late','early','attend'));
 
 create table if not exists public.attendance (
   event_id uuid references public.events(id) on delete cascade,
@@ -503,7 +520,7 @@ begin
     if k = 'officer' then
       if exists (select 1 from user_roles where user_id = uid and role in ('admin','officer')) then return true; end if;
     elsif k = 'sectional' then
-      if exists (select 1 from profiles where id = uid and section = e.section) then return true; end if;
+      if exists (select 1 from profiles where id = uid and section = any(case when cardinality(e.sections) > 0 then e.sections else array[e.section] end)) then return true; end if;
     elsif k = 'class' then
       if exists (select 1 from class_students where class_id = e.class_id and user_id = uid) then return true; end if;
     elsif has_pieces then

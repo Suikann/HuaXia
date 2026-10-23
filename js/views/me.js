@@ -1,16 +1,42 @@
-import { sb, state, me, route, esc, run, toast, pageHead, avatar, nameOf, sectionChip, roleChips, render, $, loadShared, discordAvatar } from '../core.js';
+import { sb, state, me, route, esc, run, toast, pageHead, avatar, nameOf, sectionChip, roleChips, render, $, $$, loadShared, discordAvatar, getTheme, setTheme } from '../core.js';
 import { calendarsFor, LINK_DISCORD_TAKEN } from '../logic.js';
+
+// 頭像：裁成正方形、縮成小圖，直接存在 profiles.avatar_url（不需要另外的檔案空間）
+function squareImage(file, size) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file); const img = new Image();
+    img.onload = () => {
+      const side = Math.min(img.naturalWidth, img.naturalHeight);
+      const c = document.createElement('canvas'); c.width = c.height = size;
+      c.getContext('2d').drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, size, size);
+      URL.revokeObjectURL(url); resolve(c.toDataURL('image/jpeg', 0.85));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('bad image')); };
+    img.src = url;
+  });
+}
+async function saveAvatar(value, okMsg) {
+  if (!(await run(() => sb.from('profiles').update({ avatar_url: value }).eq('id', me()), okMsg))) return;
+  state.profile = { ...state.profile, avatar_url: value };
+  const p = state.people.get(me()); if (p) p.avatar_url = value;
+  const sum = $('.me-menu summary'); if (sum) sum.innerHTML = avatar(me(), 32);
+  const who = $('.me-who'); if (who) who.firstElementChild.outerHTML = avatar(me(), 40);
+  render();
+}
 
 route('/me', async () => {
   const u = state.profile;
   const { data: priv } = await sb.from('profile_private').select('*').eq('user_id', me()).maybeSingle();
   const cals = calendarsFor(state.calendars, state.p, u?.section);
+  // 幹部行事曆沒有公開，Apple 只能訂閱公開的那幾個
+  const apple = cals.filter((c) => c.audience !== 'officers');
   const ids = (await sb.auth.getUserIdentities().catch(() => null))?.data?.identities || [];
   const hasDiscord = ids.some((i) => i.provider === 'discord');
   const hasEmail = ids.some((i) => i.provider === 'email');
   const dcAvatar = await discordAvatar();
   const canUseDc = dcAvatar && dcAvatar !== u?.avatar_url;
   setTimeout(() => {
+    $$('[data-theme-pick]').forEach((b) => (b.onclick = () => { setTheme(b.dataset.themePick); $$('[data-theme-pick]').forEach((x) => x.setAttribute('aria-pressed', String(x === b))); }));
     $('#link-discord')?.addEventListener('click', async () => {
       const r = await sb.auth.linkIdentity({ provider: 'discord', options: { redirectTo: location.origin + location.pathname + '#/me' } });
       if (r?.error) toast(/manual linking/i.test(r.error.message) ? '管理員還沒開啟「帳號連結」功能（Supabase 的 Allow manual linking）。' : /already/i.test(r.error.message) ? LINK_DISCORD_TAKEN : '連結失敗：' + r.error.message, 'bad');
@@ -22,15 +48,26 @@ route('/me', async () => {
       if (a && b) { toast('已儲存', 'ok'); await loadShared(); state.profile = { ...state.profile, display_name: f.get('display_name').trim() }; render(); }
     });
     $('#logout')?.addEventListener('click', () => sb.auth.signOut());
-    $('#use-dc-avatar')?.addEventListener('click', async () => {
-      if (await run(() => sb.from('profiles').update({ avatar_url: dcAvatar }).eq('id', me()), '已換成 Discord 頭像')) {
-        state.profile = { ...state.profile, avatar_url: dcAvatar }; await loadShared(); location.reload();
-      }
+    $('#use-dc-avatar')?.addEventListener('click', () => saveAvatar(dcAvatar, '已換成 Discord 頭像'));
+    $('#del-avatar')?.addEventListener('click', () => saveAvatar(null, '已移除頭像'));
+    $('#pick-avatar')?.addEventListener('click', () => $('#avatar-file').click());
+    $('#avatar-file')?.addEventListener('change', async (e) => {
+      const f = e.target.files?.[0]; e.target.value = '';
+      if (!f) return;
+      if (!f.type.startsWith('image/')) return toast('請選一張圖片', 'bad');
+      try { await saveAvatar(await squareImage(f, 160), '頭像已更新'); } catch { toast('這張圖片讀不出來，換一張試試', 'bad'); }
     });
   });
   return pageHead('我的設定') +
     `<section class="card me-head">${avatar(me(), 56)}<div><h2>${esc(nameOf(me()))}</h2><div class="chips">${sectionChip(u?.section)}${roleChips(state.roles)}${u?.officer_title ? `<span class="chip gold">${esc(u.officer_title)}</span>` : ''}</div></div>
-      <div class="actions">${canUseDc ? '<button class="btn sm" id="use-dc-avatar">使用 Discord 頭像</button>' : ''}<button class="btn ghost" id="logout">登出</button></div></section>
+      <div class="actions"><button class="btn ghost" id="logout">登出</button></div>
+      <div class="avatar-acts"><button class="btn sm" id="pick-avatar">更換頭像</button>${canUseDc ? '<button class="btn sm ghost" id="use-dc-avatar">使用 Discord 頭像</button>' : ''}${u?.avatar_url ? '<button class="btn sm ghost" id="del-avatar">移除頭像</button>' : ''}
+        <input type="file" id="avatar-file" accept="image/*" hidden></div></section>
+
+    <section class="card"><h2>外觀</h2>
+      <div class="theme-pick" role="group" aria-label="外觀">${[['system', '跟隨系統', 'auto'], ['light', '淺色', 'light'], ['dark', '深色', 'dark']].map(([k, l, sw]) => `<button data-theme-pick="${k}" aria-pressed="${getTheme() === k}"><span class="sw sw-${sw}"><i></i><i></i></span>${l}</button>`).join('')}</div>
+      <p class="small muted" style="margin-top:10px">只影響這台裝置。「跟隨系統」會照手機或電腦的深色模式自動切換。</p>
+    </section>
 
     <section class="card"><h2>登入方式</h2>
       <p class="small">目前可用：${[hasDiscord && 'Discord', hasEmail && 'Email ＋ 密碼'].filter(Boolean).join('、') || '—'}</p>
@@ -39,9 +76,12 @@ route('/me', async () => {
            <button class="btn" id="link-discord">連結 Discord</button>`}
     </section>
 
-    <section class="card"><h2>加到我的 Google 行事曆</h2>
-      ${cals.length ? `<p class="small muted">按一下加入，之後幹部新增或修改行程都會自動出現在你的行事曆，練習前一天和前一小時會提醒。只需要加一次。</p>
+    <section class="card"><h2>加到我的行事曆</h2>
+      ${cals.length ? `<h3 class="cal-sub">Google 行事曆</h3><p class="small muted">按一下加入，之後幹部新增或修改行程都會自動出現在你的行事曆，練習前一天和前一小時會提醒。只需要加一次。</p>
         <div class="cal-btns">${cals.map((c) => `<a class="btn cal-btn" href="https://calendar.google.com/calendar/render?cid=${encodeURIComponent(c.gcal_id)}" target="_blank" rel="noopener"><span class="cal-dot cal-${esc(c.key)}"></span>${esc(c.name.replace(/^華夏｜/, ''))}<span class="plus">＋</span></a>`).join('')}</div>
+        ${apple.length ? `<h3 class="cal-sub">Apple 行事曆（iPhone、Mac）</h3>
+        <p class="small muted">點一下會跳出「訂閱行事曆」，按確定就好。Apple 的更新比 Google 慢，可以到 iPhone「設定 › 行事曆 › 帳號 › 取得新資料」調快；提醒請在 Apple 行事曆自己設定。</p>
+        <div class="cal-btns">${apple.map((c) => `<a class="btn cal-btn" href="webcal://calendar.google.com/calendar/ical/${encodeURIComponent(c.gcal_id)}/public/basic.ics"><span class="cal-dot cal-${esc(c.key)}"></span>${esc(c.name.replace(/^華夏｜/, ''))}<span class="plus">＋</span></a>`).join('')}</div>` : ''}
         ${state.p.officer ? `<p class="small muted">幹部行事曆只分享給下面填的 Google 信箱${priv?.google_email ? '' : '，<b>請先填寫</b>'}。</p>` : ''}`
         : '<p class="muted">行事曆還沒建立好，管理員完成設定後這裡會出現按鈕。</p>'}
     </section>

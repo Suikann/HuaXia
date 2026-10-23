@@ -10,6 +10,8 @@ export const KIND_LABEL = {
 };
 export const ATT_LABEL = { present: '出席', late: '晚到', early: '早退', absent: '缺席', excused: '請假', na: '無曲' };
 export const LEAVE_LABEL = { leave: '請假', late: '晚到', early: '早退' };
+// 事先按「出席」確認會到（存在請假表，type = 'attend'）
+export const isAttend = (l) => l?.type === 'attend' || l?.leave_type === 'attend';
 export const ANN_TYPE = { practice: '練習異動', performance: '演出', admin: '行政', class: '教學班', urgent: '緊急', other: '公告' };
 export const ANN_AUDIENCE = { all: '全體（含槍手）', insiders: '全體社員', section: '某一組', officers: '幹部', newbies: '新生', ringers: '槍手' };
 
@@ -95,6 +97,7 @@ export function defaultRollStatus(row) {
   if (row.leave_type === 'leave') return 'excused';
   if (row.leave_type === 'late') return 'late';
   if (row.leave_type === 'early') return 'early';
+  if (row.leave_type === 'attend') return 'present';
   return null;
 }
 
@@ -122,6 +125,9 @@ export function toCSV(rows) {
 }
 
 // 行程類型顯示文字（可複選，例：大團・絲竹）
+// 分部課的組別（可能好幾組一起上）
+export function sectionsOf(e) { return e?.sections?.length ? e.sections : e?.section ? [e.section] : []; }
+
 export function kindsLabel(e) {
   const ks = e.kinds?.length ? e.kinds : [e.kind];
   return ks.map((k) => KIND_LABEL[k] || k).join('・');

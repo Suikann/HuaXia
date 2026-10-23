@@ -24,15 +24,19 @@ async function editTool(i = null) {
   if (await run(() => sb.from('settings').upsert({ key: 'tools', value: list }), '已儲存')) { await loadShared(); render(); }
 }
 
-route('/tools', async () => {
+// 工具清單（放在公告頁「教學班」分類裡）
+export function toolsBody() {
   const p = state.p; const list = tools();
   setTimeout(() => {
     $('#add-tool')?.addEventListener('click', () => editTool());
     $$('[data-tool-edit]').forEach((b) => (b.onclick = (e) => { e.preventDefault(); editTool(+b.dataset.toolEdit); }));
   });
-  return pageHead('工具', '練習用的小工具，點了會開新分頁', p.admin ? '<button class="btn pri" id="add-tool">＋ 新增工具</button>' : '') +
-    (list.length ? `<div class="tool-grid">${list.map((t, i) => safeUrl(t.url) ? `<a class="tool" href="${esc(t.url)}" target="_blank" rel="noopener noreferrer">
+  return (list.length ? `<div class="tool-grid">${list.map((t, i) => safeUrl(t.url) ? `<a class="tool" href="${esc(t.url)}" target="_blank" rel="noopener noreferrer">
       <h3>${esc(t.name)}</h3>${t.desc ? `<p class="small muted">${esc(t.desc)}</p>` : ''}
       <span class="go">開啟 ↗</span>${p.admin ? `<button class="btn sm ghost" data-tool-edit="${i}">編輯</button>` : ''}</a>` : '').join('')}</div>`
-      : empty('還沒有工具', p.admin ? '按「新增工具」放上常用的練習網頁。' : '管理員新增後會出現在這裡。'));
-});
+    : empty('還沒有工具', p.admin ? '按「新增工具」放上常用的練習網頁。' : '管理員新增後會出現在這裡。'));
+}
+export const addToolBtn = () => (state.p.admin ? '<button class="btn pri" id="add-tool">＋ 新增工具</button>' : '');
+
+// 舊網址：改到公告頁的「教學班」分類
+route('/tools', async () => { sessionStorage.setItem('af', 'class'); location.replace('#/announcements'); return ''; });

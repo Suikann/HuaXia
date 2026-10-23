@@ -12,7 +12,7 @@ async function detail(uid) {
   return `<div class="tbl-wrap"><table class="att-tbl"><thead><tr><th>日期</th><th>行程</th><th>狀態</th><th>事由</th></tr></thead><tbody>
     ${rows.map((r) => `<tr><td class="mono nowrap">${fmtDate(r.starts_at)}</td><td><a href="#/events/${r.event_id}">${esc(r.title)}</a> <span class="muted small">${KIND_LABEL[r.kind]}</span></td>
       <td>${r.status ? `<span class="att att-${r.status}">${ATT_LABEL[r.status]}</span>` : r.marked ? '' : '<span class="muted small">尚未點名</span>'}</td>
-      <td class="small">${r.leave_type ? `<span class="muted">${LEAVE_LABEL[r.leave_type]}：</span>${esc(r.leave_reason || '')}` : esc(r.note || '')}</td></tr>`).join('')}
+      <td class="small">${r.leave_type && r.leave_type !== 'attend' ? `<span class="muted">${LEAVE_LABEL[r.leave_type]}：</span>${esc(r.leave_reason || '')}` : esc(r.note || '')}</td></tr>`).join('')}
   </tbody></table></div>`;
 }
 

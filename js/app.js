@@ -1,5 +1,4 @@
-import { sb, state, connect, loadMe, loadShared, render, esc, $, $$, toast, errText, me, DEMO, avatar, nameOf, linkError } from './core.js';
-import { mark } from './mark.js';
+import { sb, state, connect, loadMe, loadShared, render, esc, $, $$, toast, errText, me, DEMO, DEMO_ROLES, demoAs, avatar, nameOf, linkError } from './core.js';
 import './views/home.js';
 import './views/events.js';
 import './views/attendance.js';
@@ -16,24 +15,35 @@ import './views/seating.js';
 import { joinScreen } from './views/recruit.js';
 import { SHARE_CATS } from './views/announcements.js';
 
-// group：電腦版依性質分段（中間有分隔線），手機版「更多」裡分組列出；mgr 收進「幹部」下拉選單
-const NAV = [
-  { path: '/', label: '首頁', main: true },
-  { path: '/events', label: '行程', main: true, group: '練習' },
-  { path: '/pieces', label: '曲目', main: true, group: '練習' },
-  { path: '/attendance', label: '出席', group: '練習', show: (p) => !p.ringerOnly },
-  { path: '/tools', label: '工具', group: '練習' },
-  { path: '/announcements', label: '公告', main: true, badge: 'main', group: '社團' },
-  { path: '/members', label: '成員', group: '社團', show: (p) => p.insider },
-  { path: '/teaching', label: '教學班', group: '幹部', mgr: true, show: (p) => p.canTeach },
-  { path: '/ringers', label: '槍手', group: '幹部', mgr: true, show: (p) => p.officer },
-  { path: '/recruit', label: '招生', group: '幹部', mgr: true, show: (p) => p.officer },
-  { path: '/settings', label: '設定', group: '幹部', mgr: true, show: (p) => p.admin },
-  { path: '/me', label: '我的設定', mobileOnly: true, group: '個人' },
-];
+import './views/groups.js';
 
-const MGR = NAV.filter((n) => n.mgr).map((n) => n.path);
-document.addEventListener('click', (e) => { const d = document.querySelector('.mgr[open]'); if (d && (!d.contains(e.target) || e.target.closest('a'))) d.open = false; });
+// 2026-10 改版：主分頁五格（手機在底部、電腦在上方）；其他功能收進右上角頭像選單
+const ICON = {
+  home: '<path d="M4 11l8-7 8 7v9h-5v-6H9v6H4z"/>',
+  ann: '<path d="M4 10v4h3l6 4V6L7 10z"/><path d="M17 9a4 4 0 0 1 0 6"/>',
+  cal: '<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/>',
+  groups: '<circle cx="9" cy="9" r="3"/><circle cx="17" cy="10" r="2.5"/><path d="M3 19c0-3 3-5 6-5s6 2 6 5M15 19c0-2 1.5-3.5 4-3.5"/>',
+  score: '<path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/>',
+};
+const icon = (k) => `<svg class="ic" viewBox="0 0 24 24" aria-hidden="true">${ICON[k]}</svg>`;
+const TABS = [
+  { path: '/', label: '首頁', icon: 'home', also: ['/attendance'] },
+  { path: '/announcements', label: '公告', icon: 'ann', badge: 'main', also: ['/sizhu', '/concerts', '/alumni', '/resources', '/tools'] },
+  { path: '/events', label: '行事曆', icon: 'cal' },
+  { path: '/groups', label: '各組', icon: 'groups', also: ['/teaching'] },
+  { path: '/pieces', label: '樂譜與編制', icon: 'score' },
+];
+const MENU = [
+  { path: '/me', label: '我的設定', group: '個人' },
+  { path: '/attendance', label: '出席明細', group: '個人', show: (p) => !p.ringerOnly },
+  { path: '/members', label: '成員', group: '幹部', show: (p) => p.officer },
+  { path: '/ringers', label: '槍手', group: '幹部', show: (p) => p.officer },
+  { path: '/recruit', label: '招生', group: '幹部', show: (p) => p.officer },
+  { path: '/settings', label: '系統設定', group: '幹部', show: (p) => p.admin },
+];
+const tabOf = (path) => TABS.find((t) => t.path === '/' ? path === '/' || t.also.some((a) => path.startsWith(a)) : path.startsWith(t.path) || (t.also || []).some((a) => path.startsWith(a)));
+
+document.addEventListener('click', (e) => { const d = document.querySelector('.me-menu[open]'); if (d && (!d.contains(e.target) || e.target.closest('a'))) d.open = false; });
 
 // 標誌動畫每次開啟網站只播一次
 function firstVisit() {
@@ -41,38 +51,29 @@ function firstVisit() {
   return true;
 }
 
-function tabLinks(list) {
-  let prev = null;
-  return list.map((n) => { const sep = prev !== null && n.group !== prev ? '<span class="tab-sep" aria-hidden="true"></span>' : ''; prev = n.group || '';
-    return `${sep}<a href="#${n.path}" data-nav="${n.path}">${n.label}${n.badge ? `<i class="badge" data-b="${n.badge}" hidden></i>` : ''}</a>`; }).join('');
-}
-function moreGroups(list) {
-  const groups = [...new Set(list.map((n) => n.group))];
-  return groups.map((g) => `<div class="more-g"><span>${g}</span>${list.filter((n) => n.group === g).map((n) => `<a href="#${n.path}" data-nav="${n.path}">${n.label}${n.badge === 'tag' ? '<i class="badge" data-b="tag" hidden></i>' : ''}</a>`).join('')}</div>`).join('');
-}
-
 function shell() {
   const p = state.p;
-  const items = NAV.filter((n) => !n.show || n.show(p));
-  document.title = state.settings.team_name || '華夏國樂社';
+  const menu = MENU.filter((n) => !n.show || n.show(p));
+  const groups = [...new Set(menu.map((n) => n.group))];
+  const name = state.settings.team_name || '華夏國樂社';
+  document.title = name;
   const animate = firstVisit();
+  const tab = (t) => `<a href="#${t.path}" data-tab="${t.path}">${icon(t.icon)}<span>${t.label}</span>${t.badge ? `<i class="badge" data-b="${t.badge}" hidden></i>` : ''}</a>`;
   $('#app').innerHTML = `
     <header class="top"><div class="top-in">
-      <a class="brand" href="#/" aria-label="${esc(state.settings.team_name || '華夏國樂社')} 首頁">${mark(animate)}<span class="seal ${animate ? 'stamp-in' : ''}">華</span></a>
-      <nav class="tabs" aria-label="主選單">${tabLinks(items.filter((n) => !n.mobileOnly && !n.mgr))}</nav>
-      ${items.some((n) => n.mgr) ? `<details class="mgr"><summary>幹部</summary><div class="mgr-menu">${items.filter((n) => n.mgr).map((n) => `<a href="#${n.path}" data-nav="${n.path}">${n.label}</a>`).join('')}</div></details>` : ''}
-      <a class="me-link" href="#/me" data-nav="/me"><span>${esc(nameOf(me()))}</span>${avatar(me(), 30)}</a>
+      <a class="brand" href="#/" aria-label="${esc(name)} 首頁"><img class="logo" src="img/logo-192.png" alt="" width="34" height="34"><span class="brand-t">${esc(name)}</span></a>
+      <nav class="tabs" aria-label="主選單">${TABS.map(tab).join('')}</nav>
+      <details class="me-menu"><summary aria-label="我的選單">${avatar(me(), 32)}</summary>
+        <div class="me-sheet"><div class="me-who">${avatar(me(), 40)}<div><b>${esc(nameOf(me()))}</b><span class="small muted">${esc(state.profile?.section || '')}${state.profile?.officer_title ? `・${esc(state.profile.officer_title)}` : ''}</span></div></div>
+        ${groups.map((g) => `<div class="me-g"><span>${g}</span>${menu.filter((n) => n.group === g).map((n) => `<a href="#${n.path}" data-nav="${n.path}">${n.label}</a>`).join('')}</div>`).join('')}
+        ${DEMO ? `<div class="me-g demo-as"><span>示範：用誰的身分看</span>${Object.entries(DEMO_ROLES).map(([k, r]) => `<button data-demo-as="${k}" aria-pressed="${demoAs() === k}">${r.label}</button>`).join('')}</div>` : ''}
+        <button class="me-out" id="sign-out">登出</button></div></details>
     </div></header>
     <main id="main" tabindex="-1"></main>
-    <nav class="bottom" aria-label="主選單">
-      ${items.filter((n) => n.main).map((n) => `<a href="#${n.path}" data-nav="${n.path}"><i class="dot"></i>${n.label}${n.badge ? `<i class="badge" data-b="${n.badge}" hidden></i>` : ''}</a>`).join('')}
-      <button id="more-btn" aria-expanded="false" aria-controls="more"><i class="dot"></i>更多</button>
-    </nav>
-    <div id="more" class="more" hidden><div class="more-sheet">${moreGroups(items.filter((n) => !n.main))}</div></div>
-    ${DEMO ? '<div class="demo-flag">示範模式・資料為虛構</div>' : ''}`;
-  const more = $('#more'), btn = $('#more-btn');
-  btn.onclick = () => { more.hidden = !more.hidden; btn.setAttribute('aria-expanded', String(!more.hidden)); };
-  more.onclick = (e) => { if (e.target === more || e.target.closest('a')) { more.hidden = true; btn.setAttribute('aria-expanded', 'false'); } };
+    <nav class="bottom" aria-label="主選單">${TABS.map(tab).join('')}</nav>
+    ${DEMO ? `<div class="demo-flag">示範模式・${esc(DEMO_ROLES[demoAs()]?.label || '')}</div>` : ''}`;
+  $('#sign-out').onclick = () => sb.auth.signOut();
+  $$('[data-demo-as]').forEach((b) => (b.onclick = () => { try { sessionStorage.setItem('demo-as', b.dataset.demoAs); } catch { } location.hash = '#/'; location.reload(); }));
 }
 
 async function refreshUnread() {
@@ -85,14 +86,10 @@ async function refreshUnread() {
 }
 
 document.addEventListener('routed', (e) => {
-  const path = e.detail;
-  $$('[data-nav]').forEach((a) => {
-    const n = a.dataset.nav;
-    a.toggleAttribute('aria-current', n === '/' ? path === '/' : path.startsWith(n));
-  });
-  $('.mgr')?.classList.toggle('on', MGR.some((m) => path.startsWith(m)));
-  const cur = () => $('.tabs a[aria-current]')?.scrollIntoView({ block: 'nearest', inline: 'center' });
-  cur(); setTimeout(cur, 400); document.fonts?.ready.then(cur);
+  const path = e.detail; const cur = tabOf(path)?.path;
+  $$('[data-tab]').forEach((a) => a.toggleAttribute('aria-current', a.dataset.tab === cur));
+  $$('[data-nav]').forEach((a) => a.toggleAttribute('aria-current', path.startsWith(a.dataset.nav)));
+  $('.me-menu')?.classList.toggle('on', !cur);
   window.scrollTo(0, 0);
 });
 document.addEventListener('unread-changed', () => refreshUnread());
@@ -100,7 +97,7 @@ document.addEventListener('unread-changed', () => refreshUnread());
 // ---------- 登入畫面 ----------
 const DISCORD_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 5.5A16 16 0 0 0 15 4.3l-.5 1a15 15 0 0 0-5 0l-.5-1A16 16 0 0 0 5 5.5C2.5 9.3 1.8 13 2.1 16.6A16 16 0 0 0 7 19l1-1.6a10 10 0 0 1-1.6-.8l.4-.3a11.5 11.5 0 0 0 10.4 0l.4.3-1.6.8 1 1.6a16 16 0 0 0 4.9-2.4c.4-4.2-.6-7.9-2.9-11.1zM9 14.5c-.9 0-1.7-.9-1.7-2s.8-2 1.7-2 1.7.9 1.7 2-.8 2-1.7 2zm6 0c-.9 0-1.7-.9-1.7-2s.8-2 1.7-2 1.7.9 1.7 2-.8 2-1.7 2z"/></svg>';
 function authHead(animate) {
-  return `<div class="auth-mark">${mark(animate)}<span class="seal big ${animate ? 'stamp-in' : ''}">華</span></div>`;
+  return `<div class="auth-logo ${animate ? 'in' : ''}"><img src="img/logo-320.png" alt="華夏國樂社" width="140" height="140"></div>`;
 }
 function authScreen(mode = 'login', animate = true) {
   $('#app').innerHTML = `<div class="auth"><div class="auth-card">

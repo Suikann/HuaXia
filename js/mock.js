@@ -1,4 +1,6 @@
 // 示範模式（網址加 ?demo）：不連資料庫，用假資料展示介面。資料都是虛構的。
+// 成員、行程、出席來自 mock-rehearsal.js（由社團出席表轉換，名字是假的）。
+import R from './mock-rehearsal.js';
 const day = 864e5;
 const at = (offsetDays, hhmm) => {
   const tw = new Date(Date.now() + 8 * 3600e3 + offsetDays * day).toISOString().slice(0, 10);
@@ -9,11 +11,7 @@ const ME = uid(1);
 
 function fixtures() {
   const P = [
-    [1, '林小華', '拉弦', '二胡', ['admin', 'member'], '社長'], [2, '陳柏宇', '吹管', '梆笛', ['officer', 'leader', 'member'], '副社'],
-    [3, '王語彤', '彈撥', '琵琶', ['officer', 'member'], '總務'], [4, '張書維', '打擊', '定音鼓', ['leader', 'member'], ''],
-    [5, '黃予安', '低音', '大提琴', ['leader', 'member'], ''], [6, '李若晴', '拉弦', '中胡', ['member'], ''],
-    [7, '吳承恩', '彈撥', '中阮', ['member'], ''], [8, '周子芸', '吹管', '高笙', ['member'], ''],
-    [9, '許芷涵', '拉弦', '二胡', ['member', 'newbie'], ''], [10, '鄭宇恆', '彈撥', '柳琴', ['member', 'newbie'], ''],
+    ...R.members.map((m) => [m.n, m.name, m.section, m.instruments, m.roles, m.title]),
     [11, '蘇晏', null, '中阮', ['ringer'], ''], [12, '何老師', null, '指揮', ['teacher'], ''],
   ];
   const profiles = P.map(([n, name, section, ins, , title]) => ({ id: uid(n), display_name: name, real_name: name, section, instruments: ins, status: 'active', officer_title: title, avatar_url: null, school: n === 11 ? '師大' : '', grade: '', bio: '' }));
@@ -29,19 +27,12 @@ function fixtures() {
   const A = [['pp1', 1], ['pp1', 9], ['pp2', 6], ['pp3', 3], ['pp4', 5], ['pp5', 2], ['pp6', 8], ['pp7', 7], ['pp8', 4], ['pp9', 1], ['pp9', 6], ['pp10', 10], ['pp11', 9], ['pp12', 1]];
   const part_assignments = A.map(([part_id, n], i) => ({ id: 'a' + i, part_id, user_id: uid(n), ringer_id: null }));
   part_assignments.push({ id: 'ar', part_id: 'pp7', user_id: uid(11), ringer_id: null });
-  const events = [
-    ['e1', 'tutti', '大團練習', -14, '19:30', '21:30', '721', null], ['e2', 'sizhu', '絲竹練習', -7, '19:30', '21:30', '721', null],
-    ['e3', 'tutti', '大團練習', -1, '19:30', '21:30', '721', null], ['e4', 'sectional', '拉弦分部課', 1, '14:00', '15:30', '721', '拉弦'],
-    ['e5', 'officer', '幹部會議', 2, '12:10', '13:00', '社辦', null], ['e6', 'tutti', '大團練習', 6, '19:30', '21:30', '721', null],
-    ['e7', 'class', '二胡入門班', 4, '18:00', '19:00', '813', null], ['e8', 'dress', '公演總彩', 30, '14:00', '17:00', '視聽館', null],
-    ['e9', 'concert', '期末公演', 33, '19:00', '21:30', '視聽館', null],
-  ].map(([id, kind, title, d, s, e, loc, section]) => ({ id, semester_id: 's1', kind, title, starts_at: at(d, s), ends_at: at(d, e), location: loc, note: id === 'e6' ? '下半場練合奏，記得帶譜架。' : '', section, class_id: kind === 'class' ? 'c1' : null, audience: kind === 'officer' ? 'officers' : ['dress', 'concert'].includes(kind) ? 'all' : 'insiders', calendar_key: 'tutti', counts_attendance: kind !== 'officer', gcal_event_id: null }));
-  const event_pieces = [['e2', 'p4'], ['e3', 'p1'], ['e3', 'p2'], ['e6', 'p2'], ['e6', 'p3'], ['e8', 'p1'], ['e8', 'p2'], ['e8', 'p3'], ['e8', 'p4']].map(([event_id, piece_id]) => ({ event_id, piece_id }));
-  const att = [];
-  const mark = (eid, map) => Object.entries(map).forEach(([n, status]) => att.push({ event_id: eid, user_id: uid(+n), status, note: '' }));
-  mark('e1', { 1: 'present', 2: 'present', 3: 'late', 4: 'present', 5: 'present', 6: 'absent', 7: 'present', 8: 'early', 9: 'present', 10: 'present' });
-  mark('e2', { 1: 'present' });
-  mark('e3', { 1: 'present', 2: 'present', 3: 'present', 4: 'late', 5: 'present', 6: 'excused', 7: 'present', 8: 'present', 9: 'present' });
+  const tw = (t) => new Date(`${t}:00+08:00`).toISOString();
+  const events = R.events.map((e) => ({ id: e.id, semester_id: 's1', kind: e.kinds[0], kinds: e.kinds, title: e.title, starts_at: tw(e.start), ends_at: tw(e.end), location: e.location, note: e.note, section: e.sections[0] || null, sections: e.sections,
+    class_id: null, audience: ['dress', 'concert'].includes(e.kinds[0]) ? 'all' : 'insiders', calendar_key: e.sections.length ? 'sec-' + ({ 吹管: 'wind', 拉弦: 'bow', 彈撥: 'pluck', 打擊: 'perc', 低音: 'bass' }[e.sections[0]]) : 'tutti', counts_attendance: e.counts, gcal_event_id: null }));
+  // 曲目寫在行程備註裡；不連結到曲目，否則沒排到曲子的人會被當成不用出席
+  const event_pieces = [];
+  const att = R.attendance.map((a) => ({ event_id: a.event_id, user_id: uid(a.n), status: a.status, note: a.note }));
   return {
     profiles, user_roles,
     profile_private: profiles.map((p, i) => ({ user_id: p.id, email: `member${i + 1}@example.com`, google_email: null, phone: '' })),
@@ -52,7 +43,7 @@ function fixtures() {
     calendars: [['tutti', '華夏｜全團練習與演出', 'insiders', null], ['sec-bow', '華夏｜拉弦分部課', 'section', '拉弦'], ['sec-wind', '華夏｜吹管分部課', 'section', '吹管'], ['class', '華夏｜教學班', 'class', null], ['ringers', '華夏｜槍手行程', 'ringers', null], ['officers', '華夏｜幹部', 'officers', null]]
       .map(([key, name, audience, section], i) => ({ key, name, audience, section, gcal_id: `demo-${key}@group.calendar.google.com`, sort: i })),
     pieces, piece_parts: parts, part_assignments, events, event_pieces, attendance: att,
-    leave_requests: [{ event_id: 'e3', user_id: uid(6), type: 'leave', reason: '期中考', created_at: at(-3, '10:00') }, { event_id: 'e6', user_id: uid(8), type: 'late', reason: '通識課 7 點下課，約 20 分鐘後到', created_at: at(0, '09:00') }],
+    leave_requests: R.leaves.map((l, i) => ({ event_id: l.event_id, user_id: uid(l.n), type: l.type, reason: l.reason, created_at: at(-i - 1, '10:00') })),
     announcements: [
       { id: 'n1', channel: 'performance', type: 'performance', audience: 'all', section: null, title: '期末公演總彩時間確定', body: '總彩在視聽館，14:00 集合搬樂器。槍手也請準時到。', pinned: true, author: uid(1), created_at: at(-2, '21:00') },
       { id: 'n2', channel: 'tutti', type: 'practice', audience: 'insiders', section: null, title: '下週二改在 621', body: '721 被借走，下週二大團改到 621。', pinned: false, author: uid(2), created_at: at(-1, '22:10') },
@@ -61,6 +52,7 @@ function fixtures() {
       { id: 'n5', channel: 'concerts', type: 'other', audience: 'insiders', section: null, title: '臺北市立國樂團 春季音樂會', body: '學生票 5 折，想去的可以揪。', venue: '中山堂', link: 'https://example.com', event_at: at(9, '19:30'), pinned: false, author: uid(6), created_at: at(-2, '22:00') },
       { id: 'n6', channel: 'concerts', type: 'other', audience: 'insiders', section: null, title: '北藝大國樂系 學期音樂會', body: '', venue: '北藝大音樂廳', link: '', event_at: at(18, '19:00'), pinned: false, author: ME, created_at: at(-1, '09:00') },
       { id: 'n7', channel: 'alumni', type: 'other', audience: 'insiders', section: null, title: '校友團年度音樂會招募團員', body: '12 月底演出，歡迎畢業學長姐回來。', pinned: true, author: uid(1), created_at: at(-4, '12:00') },
+      { id: 'n9', channel: 'tutti', type: 'practice', audience: 'section', section: '拉弦', title: '拉弦組本週分部課練〈春江〉慢板', body: '請把第二段弓法先標好。', pinned: false, author: uid(2), created_at: at(-1, '18:00') },
       { id: 'n8', channel: 'resources', type: 'other', audience: 'insiders', section: null, title: '二胡換把練習影片', body: '慢速示範，適合新生。', link: 'https://example.com', pinned: false, author: uid(9), created_at: at(-3, '21:00') },
     ],
     announcement_reads: [{ ann_id: 'n3', user_id: ME }],
@@ -87,7 +79,7 @@ function fixtures() {
       { id: 'g2', name: '范以晴', school: '北科', instruments: '高笙', contact_user_id: uid(8), contact_info: '', status: 'contacting', note: '', user_id: null, created_at: at(-15, '10:00') },
       { id: 'g3', name: '游佳', school: '北藝', instruments: '揚琴', contact_user_id: uid(3), contact_info: '', status: 'declined', note: '公演那週有比賽', user_id: null, created_at: at(-12, '10:00') },
     ],
-    ensemble_members: [1, 2, 6, 7, 8].map((n) => ({ ensemble: 'sizhu', user_id: uid(n) })),
+    ensemble_members: R.sizhu.map((n) => ({ ensemble: 'sizhu', user_id: uid(n) })),
     applications: [
       { id: 'ap1', name: '吳小芸', grade: '資管一', contact: 'IG：@xiaoyun', experience: 'none', instruments_played: '', interests: ['拉弦'], want_class: true, message: '想學二胡！', status: 'new', officer_note: '', created_at: at(-1, '21:30') },
       { id: 'ap2', name: '林子豪', grade: '經濟二', contact: 'LINE：tzuhao', experience: 'basic', instruments_played: '國中學過笛子', interests: ['吹管'], want_class: false, message: '', status: 'contacted', officer_note: '10/7 已傳 LINE', created_at: at(-3, '12:10') },
@@ -176,7 +168,7 @@ function expected(e, id) {
   if (!e.counts_attendance) return false;
   if (!roles.some((r) => ['admin', 'officer', 'leader', 'member', 'newbie'].includes(r))) return false;
   const p = DB.profiles.find((x) => x.id === id);
-  if (e.kind === 'sectional') return p?.section === e.section;
+  if (e.kind === 'sectional') return (e.sections?.length ? e.sections : [e.section]).includes(p?.section);
   if (e.kind === 'class') return DB.class_students.some((s) => s.class_id === e.class_id && s.user_id === id);
   const eps = DB.event_pieces.filter((x) => x.event_id === e.id).map((x) => x.piece_id);
   if (!eps.length) return true;

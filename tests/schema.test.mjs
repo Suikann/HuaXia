@@ -196,6 +196,29 @@ test('複選類型：只要符合其中一種就算應出席（幹部會議＋�
   assert.equal(ok[R], false);  // 槍手
 });
 
+test('分部課可以好幾組一起上：組別自動取第一組，任一組的人都算應出席', async () => {
+  const E2 = (n) => `55555555-5555-5555-5555-5555555555a${n}`;
+  const r = await as(A, `insert into events (id,semester_id,kinds,sections,title,starts_at,ends_at,calendar_key) values
+    ('${E2(1)}','${S}',array['sectional'],array['彈撥','拉弦'],'彈撥＋拉弦','2026-11-22 10:00+08','2026-11-22 12:00+08','tutti'),
+    ('${E2(2)}','${S}',array['sectional'],array['彈撥','低音'],'彈撥＋低音','2026-11-22 10:00+08','2026-11-22 12:00+08','tutti') returning section`);
+  assert.equal(r.error, undefined);
+  assert.equal(r.rows[0].section, '彈撥');
+  const old = await as(A, `insert into events (id,semester_id,kinds,section,title,starts_at,ends_at,calendar_key) values
+    ('${E2(3)}','${S}',array['sectional'],'打擊','打擊','2026-11-22 10:00+08','2026-11-22 12:00+08','tutti') returning sections`);
+  assert.deepEqual(old.rows[0].sections, ['打擊']);  // 只填一組也可以
+  const exp = async (n) => (await as(A, `select public.is_expected(e, '${B}') as ok from events e where e.id='${E2(n)}'`)).rows[0].ok;
+  assert.equal(await exp(1), true);   // 阿B 是拉弦
+  assert.equal(await exp(2), false);
+});
+
+test('可以事先確認出席，不會被當成請假', async () => {
+  const ok = await as(B, `insert into leave_requests (event_id,type) values ('${E(7)}','attend') returning type`);
+  assert.equal(ok.error, undefined);
+  const bad = await as(B, `insert into leave_requests (event_id,type) values ('${E(7)}','maybe')`);
+  assert.ok(bad.error);
+  await as(B, `delete from leave_requests where event_id='${E(7)}'`);
+});
+
 test('絲竹排練沒指定曲目時，只有絲竹名單上的人算應出席', async () => {
   await as(A, `insert into events (id,semester_id,kinds,title,starts_at,ends_at,calendar_key) values
     ('${E(8)}','${S}',array['sizhu'],'絲竹排練','2026-10-22 19:00+08','2026-10-22 21:00+08','tutti')`);
