@@ -1,5 +1,4 @@
 import { sb, state, route, esc, run, toast, formDialog, pageHead, empty, fmtDate, fmtTime, render, $, $$, loadShared } from '../core.js';
-import { mark } from '../mark.js';
 import { SECTIONS } from '../logic.js';
 
 const EXP = { none: '沒學過', some: '學過一點', basic: '有基礎' };
@@ -14,7 +13,7 @@ export async function joinScreen() {
   ]);
   const name = team?.value || '華夏國樂社';
   document.title = `加入${name}`;
-  const head = `<div class="auth-mark">${mark(true)}<span class="seal big stamp-in">華</span></div>`;
+  const head = `<div class="auth-logo in"><img src="img/logo-320.png" alt="華夏國樂社" width="140" height="140"></div>`;
   if (open?.value !== true) {
     app.innerHTML = `<div class="auth"><div class="auth-card">${head}<h1>目前沒有開放報名</h1>
       <p class="muted">招生期間會再開放，歡迎先到社團的 IG 或 DC 看看。</p></div></div>`;
@@ -52,7 +51,7 @@ export async function joinScreen() {
     const r = await sb.from('applications').insert(row);
     btn.disabled = false;
     if (r.error) return toast(/row-level security/i.test(r.error.message) ? '報名已經截止了。' : '送出失敗，請稍後再試。', 'bad');
-    app.innerHTML = `<div class="auth"><div class="auth-card">${`<div class="auth-mark">${mark(false)}<span class="seal big">華</span></div>`}
+    app.innerHTML = `<div class="auth"><div class="auth-card"><div class="auth-logo"><img src="img/logo-320.png" alt="華夏國樂社" width="140" height="140"></div>
       <h1>報名成功</h1><p class="muted">${esc(row.name)}，謝謝你！幹部會用「${esc(row.contact)}」跟你聯絡。</p></div></div>`;
   };
 }

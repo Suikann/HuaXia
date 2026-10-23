@@ -191,7 +191,7 @@ route('/pieces', async () => {
     $('#arch')?.addEventListener('click', () => { sessionStorage.setItem('arch', showArch ? '0' : '1'); render(); });
   });
   const total = list.filter((x) => !x.archived).reduce((n, x) => n + (Number(x.duration_min) || 0), 0);
-  return pageHead('曲目與編制', `${p.insider ? `本學期 ${list.filter((x) => !x.archived).length} 首・總長約 <span class="mono">${Math.round(total)}</span> 分鐘` : '你參與演出的曲目'}`,
+  return pageHead('樂譜與編制', `${p.insider ? `本學期 ${list.filter((x) => !x.archived).length} 首・總長約 <span class="mono">${Math.round(total)}</span> 分鐘` : '你參與演出的曲目'}`,
     `${p.officer ? `<button class="btn ghost sm" id="arch">${showArch ? '隱藏封存' : '顯示封存'}</button><button class="btn pri" id="add-piece">＋ 新增曲目</button>` : ''}`) +
     (myPieces.length && p.insider ? `<h2 class="section-h">我的曲目</h2><div class="piece-grid">${myPieces.map(card).join('')}</div><h2 class="section-h">全部曲目</h2>` : '') +
     (list.length ? `<div class="piece-grid">${list.map(card).join('')}</div>` : empty('還沒有曲目', p.officer ? '按「新增曲目」，再為每首曲子設定聲部和排人。' : '幹部建立曲目與編制後會出現在這裡。'));

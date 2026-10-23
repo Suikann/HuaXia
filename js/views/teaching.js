@@ -41,7 +41,7 @@ async function editClass(c = null) {
   toast('已儲存', 'ok'); render();
 }
 
-async function classesTab() {
+export async function classesTab() {
   const p = state.p;
   const [{ data: classes }, { data: stu }, { data: ms }, { data: prog }] = await Promise.all([
     sb.from('classes').select('*').order('created_at'),

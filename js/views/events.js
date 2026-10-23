@@ -1,5 +1,5 @@
 import { sb, state, me, route, go, esc, run, toast, formDialog, armDelete, pageHead, empty, fmtDate, fmtTime, fmtRange, chipPerson, nameOf, sectionChip, render, $, $$, DEMO } from '../core.js';
-import { KIND_LABEL, LEAVE_LABEL, ATT_LABEL, SECTIONS, eventDefaults, kindsDefaults, kindsLabel, twParts, twWeekday, twToIso, daysFromToday, defaultRollStatus } from '../logic.js';
+import { KIND_LABEL, LEAVE_LABEL, ATT_LABEL, SECTIONS, sectionsOf, isAttend, eventDefaults, kindsDefaults, kindsLabel, twParts, twWeekday, twToIso, daysFromToday, defaultRollStatus } from '../logic.js';
 
 export async function invokeFn(name, body) {
   if (DEMO) return { ok: true };
@@ -12,6 +12,13 @@ export async function invokeFn(name, body) {
   return data;
 }
 
+// 分部課只給自己那組看；幹部在行事曆看得到全部（mine=true 時連幹部也只看自己組，用在首頁）
+export function forMe(e, mine = false) {
+  if (!(e.kinds || [e.kind]).includes('sectional') || !sectionsOf(e).length) return true;
+  if (!mine && state.p.officer) return true;
+  return sectionsOf(e).includes(state.profile?.section);
+}
+
 export function eventCard(e, { leave } = {}) {
   const d = daysFromToday(e.starts_at);
   const t = twParts(e.starts_at);
@@ -20,7 +27,7 @@ export function eventCard(e, { leave } = {}) {
   return `<a class="ev-card kind-${e.kind} ${d < 0 ? 'past' : ''}" href="#/events/${e.id}">
     <div class="ev-date"><b>${t.month}/${t.day}</b><span>週${twWeekday(e.starts_at)}</span></div>
     <div class="ev-body">
-      <div class="ev-top"><span class="kind">${kindsLabel(e)}</span>${e.section ? sectionChip(e.section) : ''}</div>
+      <div class="ev-top"><span class="kind">${kindsLabel(e)}</span>${sectionsOf(e).map(sectionChip).join('')}</div>
       <h3>${esc(e.title)}</h3>
       <p class="meta"><span class="mono">${fmtTime(e.starts_at)}–${fmtTime(e.ends_at)}</span>${e.location ? `　${esc(e.location)}` : ''}</p>
     </div>
@@ -47,7 +54,7 @@ export async function editEvent(ev = null) {
       { name: 'start', label: '開始', type: 'time', required: true, value: s?.time || '19:30' },
       { name: 'end', label: '結束', type: 'time', required: true, value: e2?.time || '21:30' },
       { name: 'location', label: '地點', value: ev?.location, placeholder: '例：721、視聽館' },
-      { name: 'section', label: '分部課組別', type: 'select', value: ev?.section || '', options: [['', '（不是分部課）'], ...SECTIONS.map((x) => [x, x])], hint: '有勾「分部課」時才需要' },
+      { name: 'sections', label: '分部課組別（可複選）', type: 'checks', full: true, value: sectionsOf(ev), options: SECTIONS.map((x) => [x, x]), hint: '有勾「分部課」時才需要。好幾組一起上就都勾，例如彈撥＋低音' },
       { name: 'class_id', label: '教學班', type: 'select', value: ev?.class_id || '', options: [['', '（不是教學班）'], ...classes.map((c) => [c.id, c.name])], hint: '有勾「教學班」時才需要' },
       { name: 'pieces', label: '這次練習的曲目', type: 'checks', value: cur, options: pieces, full: true, hint: '有勾選曲目時，沒被排到這些曲目的人自動算「無曲」，不計入出席率' },
       { name: 'note', label: '備註', type: 'textarea', value: ev?.note, full: true },
@@ -60,17 +67,18 @@ export async function editEvent(ev = null) {
   if (v.end <= v.start) { toast('結束時間要晚於開始時間', 'bad'); return; }
   if (!v.kinds.length) { toast('至少要選一個類型', 'bad'); return; }
   const has = (k) => v.kinds.includes(k);
-  const defs = kindsDefaults(v.kinds, v.section);
+  const defs = kindsDefaults(v.kinds, v.sections[0]);
   const row = {
     kinds: v.kinds, kind: defs.kind, title: v.title, location: v.location, note: v.note,
     starts_at: twToIso(v.date, v.start), ends_at: twToIso(v.date, v.end),
-    section: has('sectional') ? v.section || null : null,
+    section: has('sectional') ? v.sections[0] || null : null,
+    sections: has('sectional') ? v.sections : [],
     class_id: has('class') ? v.class_id || null : null,
     calendar_key: defs.calendar_key, audience: defs.audience,
     counts_attendance: defs.counts ? v.counts : false,
     semester_id: ev?.semester_id || state.semester.id,
   };
-  if (has('sectional') && !row.section) { toast('有勾分部課，要選組別', 'bad'); return; }
+  if (has('sectional') && !row.sections.length) { toast('有勾分部課，要選組別', 'bad'); return; }
   if (has('class') && !row.class_id) { toast('有勾教學班，要選是哪一班', 'bad'); return; }
   const saved = await run(() => ev ? sb.from('events').update(row).eq('id', ev.id).select().single() : sb.from('events').insert(row).select().single());
   if (!saved) return;
@@ -96,6 +104,13 @@ async function deleteEvent(ev) {
   go('/events');
 }
 
+// 「出席」：事先確認會到；再按一次取消
+export async function toggleAttend(evId, on) {
+  if (on) await run(() => sb.from('leave_requests').upsert({ event_id: evId, user_id: me(), type: 'attend', reason: '' }), '已確認出席');
+  else await run(() => sb.from('leave_requests').delete().eq('event_id', evId).eq('user_id', me()), '已取消確認');
+  render();
+}
+
 async function leaveDialog(ev, cur) {
   const v = await formDialog({
     title: `${cur ? '修改' : ''}請假：${ev.title}`,
@@ -112,27 +127,70 @@ async function leaveDialog(ev, cur) {
   render();
 }
 
+// 月曆：一格一天，點日期看當天行程
+function monthGrid(ym, evs, lv, pick) {
+  const [y, m] = ym.split('-').map(Number);
+  const first = new Date(Date.UTC(y, m - 1, 1)).getUTCDay();
+  const days = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const today = twParts(new Date()).date;
+  const byDay = new Map();
+  for (const e of evs) { const d = twParts(e.starts_at).date; if (!byDay.has(d)) byDay.set(d, []); byDay.get(d).push(e); }
+  const cells = [];
+  for (let i = 0; i < first; i++) cells.push('<span class="cal-cell blank"></span>');
+  for (let d = 1; d <= days; d++) {
+    const key = `${ym}-${String(d).padStart(2, '0')}`; const list = byDay.get(key) || [];
+    cells.push(`<button class="cal-cell ${key === today ? 'today' : ''} ${key === pick ? 'pick' : ''} ${list.length ? 'has' : ''}" data-day="${key}" aria-label="${m}月${d}日${list.length ? `，${list.length} 個行程` : ''}">
+      <b>${d}</b>${list.slice(0, 2).map((e) => `<span class="cal-ev kd-${e.kind} ${lv.get(e.id) ? 'off' : ''}">${esc(e.title)}</span>`).join('')}${list.length > 2 ? `<span class="cal-more">+${list.length - 2}</span>` : ''}</button>`);
+  }
+  return `<div class="cal-grid">${'日一二三四五六'.split('').map((w) => `<span class="cal-wk">${w}</span>`).join('')}${cells.join('')}</div>`;
+}
+
 route('/events', async () => {
   const p = state.p;
-  const filter = sessionStorage.getItem('evf') || 'upcoming';
-  let q = sb.from('events').select('*').order('starts_at', { ascending: filter !== 'past' });
+  const filter = sessionStorage.getItem('evf') || 'month';
+  const today = twParts(new Date()).date;
+  const ym = sessionStorage.getItem('evm') || today.slice(0, 7);
   const nowIso = new Date(Date.now() - 3 * 3600e3).toISOString();
-  q = filter === 'past' ? q.lt('starts_at', nowIso).limit(60) : q.gte('starts_at', nowIso).limit(80);
-  const [{ data: evs }, { data: leaves }] = await Promise.all([q, sb.from('leave_requests').select('*').eq('user_id', me())]);
-  const lv = new Map((leaves || []).map((l) => [l.event_id, l]));
+  let q = sb.from('events').select('*').order('starts_at', { ascending: filter !== 'past' });
+  if (filter === 'month') {
+    const [y, m] = ym.split('-').map(Number);
+    const next = m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`;
+    q = q.gte('starts_at', twToIso(`${ym}-01`, '00:00')).lt('starts_at', twToIso(`${next}-01`, '00:00')).limit(200);
+  } else q = filter === 'past' ? q.lt('starts_at', nowIso).limit(60) : q.gte('starts_at', nowIso).limit(80);
+  const [{ data: evsAll }, { data: leaves }] = await Promise.all([q, sb.from('leave_requests').select('*').eq('user_id', me())]);
+  const evs = (evsAll || []).filter((e) => forMe(e));
+  const lv = new Map((leaves || []).filter((l) => !isAttend(l)).map((l) => [l.event_id, l]));
+  // 預設選今天；今天沒行程就選這個月接下來第一個有行程的日子
+  const from = ym === today.slice(0, 7) ? today : `${ym}-01`;
+  const nextDay = (evs || []).map((e) => twParts(e.starts_at).date).filter((d) => d >= from).sort()[0];
+  const pick = sessionStorage.getItem('evd') || nextDay || from;
+  const shift = (n) => { const [y, m] = ym.split('-').map(Number); const d = new Date(Date.UTC(y, m - 1 + n, 1)); return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`; };
+  setTimeout(() => {
+    $$('[data-evf]').forEach((b) => (b.onclick = () => { sessionStorage.setItem('evf', b.dataset.evf); render(); }));
+    $$('[data-evm]').forEach((b) => (b.onclick = () => { sessionStorage.setItem('evm', b.dataset.evm); sessionStorage.removeItem('evd'); render(); }));
+    $$('[data-day]').forEach((b) => (b.onclick = () => { sessionStorage.setItem('evd', b.dataset.day); render(); }));
+    $('#add-ev')?.addEventListener('click', () => editEvent());
+  });
+  const head = pageHead('行事曆', '練習、分部課、教學班與演出，會同步到你的 Google 行事曆。',
+    `<div class="seg"><button data-evf="month" aria-pressed="${filter === 'month'}">月曆</button><button data-evf="upcoming" aria-pressed="${filter === 'upcoming'}">接下來</button><button data-evf="past" aria-pressed="${filter === 'past'}">已結束</button></div>
+     ${p.officer ? '<button class="btn pri" id="add-ev">＋ 新增行程</button>' : ''}`);
+  if (filter === 'month') {
+    const dayList = (evs || []).filter((e) => twParts(e.starts_at).date === pick);
+    const [, pm, pd] = pick.split('-').map(Number);
+    return head + `<section class="card cal-card">
+      <div class="cal-nav"><button class="icon-btn" data-evm="${shift(-1)}" aria-label="上個月">‹</button><h2>${+ym.slice(0, 4)} 年 ${+ym.slice(5)} 月</h2><button class="icon-btn" data-evm="${shift(1)}" aria-label="下個月">›</button>
+        ${ym !== today.slice(0, 7) ? `<button class="btn sm ghost" data-evm="${today.slice(0, 7)}">回到本月</button>` : ''}</div>
+      ${monthGrid(ym, evs || [], lv, pick)}</section>
+      <section class="card"><div class="card-head"><h2>${pm}/${pd}（${twWeekday(twToIso(pick, '12:00'))}）</h2><span class="muted small">${dayList.length ? `${dayList.length} 個行程` : ''}</span></div>
+      ${dayList.length ? `<div class="ev-list">${dayList.map((e) => eventCard(e, { leave: lv.get(e.id) })).join('')}</div>` : '<p class="muted small">這天沒有行程。</p>'}</section>`;
+  }
   const groups = new Map();
   for (const e of evs || []) {
-    const t = twParts(e.starts_at); const k = `${t.date.slice(0, 7)}`;
+    const k = twParts(e.starts_at).date.slice(0, 7);
     if (!groups.has(k)) groups.set(k, []);
     groups.get(k).push(e);
   }
-  setTimeout(() => {
-    $$('[data-evf]').forEach((b) => (b.onclick = () => { sessionStorage.setItem('evf', b.dataset.evf); render(); }));
-    $('#add-ev')?.addEventListener('click', () => editEvent());
-  });
-  return pageHead('行程', '練習、分部課、教學班與演出。行程會同步到你的 Google 行事曆。',
-    `<div class="seg"><button data-evf="upcoming" aria-pressed="${filter !== 'past'}">接下來</button><button data-evf="past" aria-pressed="${filter === 'past'}">已結束</button></div>
-     ${p.officer ? '<button class="btn pri" id="add-ev">＋ 新增行程</button>' : ''}`) +
+  return head +
     (groups.size ? [...groups].map(([m, list]) => `<section class="month"><h2 class="month-h">${+m.slice(5)} 月</h2><div class="ev-list">${list.map((e) => eventCard(e, { leave: lv.get(e.id) })).join('')}</div></section>`).join('')
       : empty(filter === 'past' ? '還沒有已結束的行程' : '接下來沒有行程', p.officer ? '按「新增行程」建立第一次練習，系統會自動同步到大家的行事曆。' : '幹部建立行程後會出現在這裡。'));
 });
@@ -141,11 +199,13 @@ route('/events/:id', async ({ id }) => {
   const p = state.p;
   const { data: ev } = await sb.from('events').select('*').eq('id', id).maybeSingle();
   if (!ev) return empty('找不到這個行程', '可能已被刪除，或你沒有查看權限。', '<a class="btn" href="#/events">回行程</a>');
-  const [{ data: eps }, { data: myLeave }] = await Promise.all([
+  const [{ data: eps }, { data: myRow }] = await Promise.all([
     sb.from('event_pieces').select('piece_id, pieces(id,title)').eq('event_id', id),
     sb.from('leave_requests').select('*').eq('event_id', id).eq('user_id', me()).maybeSingle(),
   ]);
   const past = daysFromToday(ev.starts_at) < 0;
+  const confirmed = isAttend(myRow);
+  const myLeave = confirmed ? null : myRow;
   const canRoll = p.officer || p.leader;
   const roster = (await sb.rpc('event_roster', { eid: id })).data || [];
   const mine = roster.find((r) => r.user_id === me());
@@ -154,6 +214,7 @@ route('/events/:id', async ({ id }) => {
   setTimeout(() => {
     $('#edit-ev')?.addEventListener('click', () => editEvent(ev));
     $('#leave-btn')?.addEventListener('click', () => leaveDialog(ev, myLeave));
+    $('#attend-btn')?.addEventListener('click', () => toggleAttend(id, !confirmed));
     $('#all-present')?.addEventListener('click', async () => {
       const rows = roster.filter((r) => r.expected && !r.status).map((r) => ({ event_id: id, user_id: r.user_id, status: defaultRollStatus(r) || 'present' }));
       if (!rows.length) return toast('沒有未點名的人');
@@ -169,7 +230,8 @@ route('/events/:id', async ({ id }) => {
 
   const pieces = (eps || []).map((x) => x.pieces).filter(Boolean);
   const exp = roster.filter((r) => r.expected);
-  const leaves = roster.filter((r) => r.leave_type);
+  const leaves = roster.filter((r) => r.leave_type && !isAttend(r));
+  const yes = roster.filter((r) => isAttend(r)).length;
   const counts = Object.fromEntries(Object.keys(ATT_LABEL).map((k) => [k, roster.filter((r) => r.status === k).length]));
   const bySec = new Map();
   for (const r of roster) { const s = state.people.get(r.user_id)?.section || '未分組'; if (!bySec.has(s)) bySec.set(s, []); bySec.get(s).push(r); }
@@ -177,7 +239,7 @@ route('/events/:id', async ({ id }) => {
   const secOrder = (s) => { const i = SECTIONS.indexOf(s); return i < 0 ? 99 : i; };
   const secs = [...bySec].sort((a, b) => secOrder(a[0]) - secOrder(b[0]));
   return `<a class="back" href="#/events">← 行程</a>` +
-    pageHead(ev.title, `<span class="kind">${kindsLabel(ev)}</span> ${ev.section ? sectionChip(ev.section) : ''} <span class="mono">${fmtRange(ev.starts_at, ev.ends_at)}</span>${ev.location ? ` · ${esc(ev.location)}` : ''}`,
+    pageHead(ev.title, `<span class="kind">${kindsLabel(ev)}</span> ${sectionsOf(ev).map(sectionChip).join(' ')} <span class="mono">${fmtRange(ev.starts_at, ev.ends_at)}</span>${ev.location ? ` · ${esc(ev.location)}` : ''}`,
       p.officer ? '<button class="btn" id="edit-ev">編輯</button>' : '') +
     `<div class="grid2">
       <section class="card">
@@ -191,19 +253,21 @@ route('/events/:id', async ({ id }) => {
         ${mine?.status ? `<p><span class="att att-${mine.status}">${ATT_LABEL[mine.status]}</span></p>`
           : expectedMe === false ? '<p><span class="att att-na">無曲</span> 這次沒有排到你的曲目，不用到。</p>'
           : myLeave ? `<p><span class="chip ${myLeave.type === 'leave' ? 'bad' : 'warn'}">已${LEAVE_LABEL[myLeave.type]}</span> ${esc(myLeave.reason)}</p>`
-          : '<p class="muted">預計出席</p>'}
-        ${!past ? `<button class="btn" id="leave-btn">${myLeave ? '修改請假' : '請假／晚到／早退'}</button>` : ''}
+          : confirmed ? '<p><span class="chip ok">已確認出席</span></p>'
+          : '<p class="muted">預計出席・還沒確認</p>'}
+        ${!past && expectedMe !== false && !mine?.status ? `<div class="row-start">${myLeave ? '' : `<button class="btn ${confirmed ? '' : 'pri'}" id="attend-btn">${confirmed ? '取消確認' : '出席'}</button>`}
+          <button class="btn ${myLeave ? '' : 'ghost'}" id="leave-btn">${myLeave ? '修改請假' : '請假／晚到／早退'}</button></div>` : ''}
       </section>
     </div>` +
     (canRoll ? `<section class="card">
-      <div class="card-head"><h2>點名 <span class="muted small">應到 ${exp.length} 人</span></h2>
+      <div class="card-head"><h2>點名 <span class="muted small">應到 ${exp.length} 人${yes ? `・已確認出席 ${yes} 人` : ''}</span></h2>
         <div class="actions"><span class="stat-line">${['present', 'late', 'early', 'excused', 'absent'].map((k) => `${ATT_LABEL[k]} <b class="mono">${counts[k]}</b>`).join('　')}</span>
         <button class="btn sm" id="all-present">其餘標為出席</button></div></div>
       <p class="small muted" style="margin-bottom:10px">晚到、早退有事先在系統預告的算 1 次出席，沒預告的算 0.5 次。遲到但沒錯過自己的曲目，可以直接標「出席」。</p>
       ${leaves.length ? `<div class="leave-box"><b>請假與預告</b>${leaves.map((r) => `<div>${chipPerson(r.user_id)} <span class="chip ${r.leave_type === 'leave' ? 'bad' : 'warn'}">${LEAVE_LABEL[r.leave_type]}</span> ${esc(r.leave_reason || '')}</div>`).join('')}</div>` : ''}
       ${roster.length ? `<div class="tbl-wrap"><table class="roll"><tbody>${secs.map(([s, rows]) => `<tr class="grp"><th colspan="2">${esc(s)}</th></tr>` + rows.map((r) => {
         const st = r.status || '';
-        return `<tr data-st="${st}"><td>${chipPerson(r.user_id)}${r.expected ? '' : ' <span class="chip">非應到</span>'}</td>
+        return `<tr data-st="${st}"><td>${chipPerson(r.user_id)}${r.expected ? '' : ' <span class="chip">非應到</span>'}${isAttend(r) ? ' <span class="chip ok">已確認</span>' : ''}</td>
           <td class="sel"><select data-roll="${r.user_id}" aria-label="${esc(nameOf(r.user_id))} 出席狀態"><option value="">未點名</option>${Object.entries(ATT_LABEL).map(([k, l]) => `<option value="${k}" ${st === k ? 'selected' : ''}>${l}</option>`).join('')}</select></td></tr>`;
       }).join('')).join('')}</tbody></table></div>` : '<p class="muted">沒有應到的人。有勾選曲目時，只有排到這些曲目的人會出現在名單上。</p>'}
     </section>` : '');

@@ -1,6 +1,7 @@
 import { sb, state, me, route, esc, run, formDialog, pageHead, empty, chipPerson, fmtDate, fmtTime, render, $, $$, toast, activePeople, nameOf } from '../core.js';
 import { SECTIONS, twParts, twWeekday, twToIso } from '../logic.js';
 import { invokeFn, eventCard } from './events.js';
+import { toolsBody, addToolBtn } from './tools.js';
 
 // 公告分類（存在 announcements.channel）。open = 所有社員都能發（只能改自己的）
 export const CATS = {
@@ -113,6 +114,7 @@ export function mentionLine(a) {
 }
 
 async function annPage() {
+  if (sessionStorage.getItem('af') === 'tools') sessionStorage.setItem('af', 'class');
   const f = CATS[sessionStorage.getItem('af')] ? sessionStorage.getItem('af') : '';
   const nowIso = new Date(Date.now() - 3 * 3600e3).toISOString();
   ROSTER = await sizhuRoster();
@@ -136,7 +138,7 @@ async function annPage() {
   const addLabel = state.p.officer ? '發布' : '分享音樂會或資源';
   const head = pageHead('公告', f === 'concerts' ? '看到不錯的音樂會、講座或比賽，分享給大家。' : f === 'resources' ? '好用的樂譜、影片、教學連結，大家都能分享。' : '',
     canAdd ? `<button class="btn pri" id="add-ann">＋ ${addLabel}</button>` : '');
-  const seg = `<div class="seg wrap"><button data-af="" aria-pressed="${!f}">全部</button>${Object.entries(CATS).map(([k, c]) => `<button data-af="${k}" aria-pressed="${f === k}">${c.label}</button>`).join('')}</div>`;
+  const seg = annSeg(f);
   const listHtml = (l) => `<div class="ann-list">${l.map((a) => postItem(a, read)).join('')}</div>`;
 
   if (f === 'concerts') {
@@ -150,9 +152,10 @@ async function annPage() {
   list = list.sort((a, b) => (b.pinned - a.pinned) || (b.created_at > a.created_at ? 1 : -1));
   const sizhuTop = f === 'sizhu' ? `<section class="card"><div class="card-head"><h2>絲竹成員 <span class="muted small">${ROSTER.length} 人</span></h2>${state.p.officer ? '<button class="btn sm" id="edit-roster">編輯名單</button>' : ''}</div>
     ${ROSTER.length ? `<div class="tags people">${ROSTER.map((id) => chipPerson(id, id === me() ? 'me' : '')).join('')}</div>` : `<p class="small muted">${state.p.officer ? '按「編輯名單」勾選有參加絲竹的人，對象選「絲竹」時就會提醒他們。' : '幹部還沒設定絲竹名單。'}</p>`}</section>
-    <section class="card"><div class="card-head"><h2>接下來的絲竹排練</h2><a class="link" href="#/events">全部行程</a></div>
-    ${evs.data?.length ? `<div class="ev-list">${evs.data.map((e) => eventCard(e)).join('')}</div>` : '<p class="small muted">目前沒有排定的絲竹排練。幹部在「行程」新增時類型勾「絲竹」，就會出現在這裡。</p>'}</section>` : '';
-  return head + seg + sizhuTop + (list.length ? listHtml(list) : empty(f ? `目前沒有「${CATS[f].label}」的公告` : '目前沒有公告', canAdd ? '按右上角的按鈕發布。' : ''));
+    <section class="card"><div class="card-head"><h2>接下來的絲竹排練</h2><a class="link" href="#/events">行事曆</a></div>
+    ${evs.data?.length ? `<div class="ev-list">${evs.data.map((e) => eventCard(e)).join('')}</div>` : '<p class="small muted">目前沒有排定的絲竹排練。幹部在「行事曆」新增時類型勾「絲竹」，就會出現在這裡。</p>'}</section>` : '';
+  const toolsTop = f === 'class' ? `<section class="card"><div class="card-head"><h2>練習工具</h2>${addToolBtn().replace('btn pri', 'btn sm')}</div>${toolsBody()}</section>` : '';
+  return head + seg + sizhuTop + toolsTop + (list.length ? listHtml(list) : empty(f ? `目前沒有「${CATS[f].label}」的公告` : '目前沒有公告', canAdd ? '按右上角的按鈕發布。' : ''));
 }
 
 async function editRoster() {
@@ -164,6 +167,11 @@ async function editRoster() {
   if (add.length) await run(() => sb.from('ensemble_members').insert(add.map((user_id) => ({ ensemble: 'sizhu', user_id }))));
   if (del.length) await run(() => sb.from('ensemble_members').delete().eq('ensemble', 'sizhu').in('user_id', del));
   toast('已更新絲竹名單', 'ok'); render();
+}
+
+// 分類列
+function annSeg(f) {
+  return `<div class="seg wrap"><button data-af="" aria-pressed="${!f}">全部</button>${Object.entries(CATS).map(([k, c]) => `<button data-af="${k}" aria-pressed="${f === k}">${c.label}</button>`).join('')}</div>`;
 }
 
 route('/announcements', annPage);
