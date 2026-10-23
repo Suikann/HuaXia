@@ -1,4 +1,4 @@
-import { sb, state, connect, loadMe, loadShared, render, esc, $, $$, toast, errText, me, DEMO, DEMO_ROLES, demoAs, avatar, nameOf, linkError } from './core.js';
+import { sb, state, connect, loadMe, loadShared, render, esc, $, $$, toast, errText, me, DEMO, DEMO_ROLES, demoAs, avatar, nameOf, linkError, mySecs } from './core.js';
 import './views/home.js';
 import './views/events.js';
 import './views/attendance.js';
@@ -64,7 +64,7 @@ function shell() {
       <a class="brand" href="#/" aria-label="${esc(name)} 首頁"><img class="logo" src="img/logo-192.png" alt="" width="34" height="34"><span class="brand-t">${esc(name)}</span></a>
       <nav class="tabs" aria-label="主選單">${TABS.map(tab).join('')}</nav>
       <details class="me-menu"><summary aria-label="我的選單">${avatar(me(), 32)}</summary>
-        <div class="me-sheet"><div class="me-who">${avatar(me(), 40)}<div><b>${esc(nameOf(me()))}</b><span class="small muted">${esc(state.profile?.section || '')}${state.profile?.officer_title ? `・${esc(state.profile.officer_title)}` : ''}</span></div></div>
+        <div class="me-sheet"><div class="me-who">${avatar(me(), 40)}<div><b>${esc(nameOf(me()))}</b><span class="small muted">${esc(mySecs().join('・'))}${state.profile?.officer_title ? `・${esc(state.profile.officer_title)}` : ''}</span></div></div>
         ${groups.map((g) => `<div class="me-g"><span>${g}</span>${menu.filter((n) => n.group === g).map((n) => `<a href="#${n.path}" data-nav="${n.path}">${n.label}</a>`).join('')}</div>`).join('')}
         ${DEMO ? `<div class="me-g demo-as"><span>示範：用誰的身分看</span>${Object.entries(DEMO_ROLES).map(([k, r]) => `<button data-demo-as="${k}" aria-pressed="${demoAs() === k}">${r.label}</button>`).join('')}</div>` : ''}
         <button class="me-out" id="sign-out">登出</button></div></details>

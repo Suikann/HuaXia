@@ -11,10 +11,10 @@ const ME = uid(1);
 
 function fixtures() {
   const P = [
-    ...R.members.map((m) => [m.n, m.name, m.section, m.instruments, m.roles, m.title]),
+    ...R.members.map((m) => [m.n, m.name, m.sections, m.instruments, m.roles, m.title]),
     [11, '蘇晏', null, '中阮', ['ringer'], ''], [12, '何老師', null, '指揮', ['teacher'], ''],
   ];
-  const profiles = P.map(([n, name, section, ins, , title]) => ({ id: uid(n), display_name: name, real_name: name, section, instruments: ins, status: 'active', officer_title: title, avatar_url: null, school: n === 11 ? '師大' : '', grade: '', bio: '' }));
+  const profiles = P.map(([n, name, secs, ins, , title]) => ({ id: uid(n), display_name: name, real_name: name, section: (secs || [])[0] || null, sections: secs || [], instruments: ins, status: 'active', officer_title: title, avatar_url: null, school: n === 11 ? '師大' : '', grade: '', bio: '' }));
   profiles.push({ id: uid(13), display_name: '新朋友', real_name: '', section: null, instruments: '', status: 'pending', officer_title: '', school: '', grade: '', bio: '' });
   const user_roles = P.flatMap(([n, , , , roles]) => roles.map((role) => ({ user_id: uid(n), role })));
   const pieces = [['p1', '泰芙努特', '刁鵬', 6], ['p2', '神遊浯洲醉金城', '朱雲嵩', 10.5], ['p3', '春天組曲（一、三、四）', '顧冠仁', 12], ['p4', '留傘調新編', '', 5.5]]
@@ -49,7 +49,7 @@ function fixtures() {
       { id: 'n2', channel: 'tutti', type: 'practice', audience: 'insiders', section: null, title: '下週二改在 621', body: '721 被借走，下週二大團改到 621。', pinned: false, author: uid(2), created_at: at(-1, '22:10') },
       { id: 'n3', channel: 'class', type: 'class', audience: 'newbies', section: null, title: '二胡入門班第一次上課', body: '請先把琴帶來，學長姐會教調音。', pinned: false, author: uid(1), created_at: at(-5, '20:00') },
       { id: 'n4', channel: 'sizhu', type: 'other', audience: 'insiders', section: null, mentions: [ME, uid(8)], mention_all: false, title: '絲竹本週練〈留傘調〉B 段', body: '請先聽示範錄音，揚琴與笛子對一下前奏。', pinned: false, author: uid(2), created_at: at(-1, '20:00') },
-      { id: 'n5', channel: 'concerts', type: 'other', audience: 'insiders', section: null, title: '臺北市立國樂團 春季音樂會', body: '學生票 5 折，想去的可以揪。', venue: '中山堂', link: 'https://example.com', event_at: at(9, '19:30'), pinned: false, author: uid(6), created_at: at(-2, '22:00') },
+      { id: 'n5', channel: 'concerts', type: 'other', audience: 'insiders', section: null, photos: ['img/logo-320.png'], title: '臺北市立國樂團 春季音樂會', body: '學生票 5 折，想去的可以揪。', venue: '中山堂', link: 'https://example.com', event_at: at(9, '19:30'), pinned: false, author: uid(6), created_at: at(-2, '22:00') },
       { id: 'n6', channel: 'concerts', type: 'other', audience: 'insiders', section: null, title: '北藝大國樂系 學期音樂會', body: '', venue: '北藝大音樂廳', link: '', event_at: at(18, '19:00'), pinned: false, author: ME, created_at: at(-1, '09:00') },
       { id: 'n7', channel: 'alumni', type: 'other', audience: 'insiders', section: null, title: '校友團年度音樂會招募團員', body: '12 月底演出，歡迎畢業學長姐回來。', pinned: true, author: uid(1), created_at: at(-4, '12:00') },
       { id: 'n9', channel: 'tutti', type: 'practice', audience: 'section', section: '拉弦', title: '拉弦組本週分部課練〈春江〉慢板', body: '請把第二段弓法先標好。', pinned: false, author: uid(2), created_at: at(-1, '18:00') },
@@ -90,6 +90,7 @@ function fixtures() {
 }
 
 const DB = fixtures();
+const FILES = new Map();
 const singular = (t) => t.replace(/ies$/, 'y').replace(/s$/, '');
 
 function parseSelect(s) {
@@ -168,7 +169,7 @@ function expected(e, id) {
   if (!e.counts_attendance) return false;
   if (!roles.some((r) => ['admin', 'officer', 'leader', 'member', 'newbie'].includes(r))) return false;
   const p = DB.profiles.find((x) => x.id === id);
-  if (e.kind === 'sectional') return (e.sections?.length ? e.sections : [e.section]).includes(p?.section);
+  if (e.kind === 'sectional') return (e.sections?.length ? e.sections : [e.section]).some((s) => (p?.sections?.length ? p.sections : [p?.section]).includes(s));
   if (e.kind === 'class') return DB.class_students.some((s) => s.class_id === e.class_id && s.user_id === id);
   const eps = DB.event_pieces.filter((x) => x.event_id === e.id).map((x) => x.piece_id);
   if (!eps.length) return true;
@@ -221,7 +222,13 @@ export function createMock() {
       signOut: async () => { location.search = ''; },
       signInWithOAuth: async () => ({ error: null }), signInWithPassword: async () => ({ error: null }), signUp: async () => ({ error: null }),
     },
-    storage: { from: () => ({ createSignedUrl: async () => ({ error: { message: 'demo' } }), upload: async () => ({ data: {}, error: null }), remove: async () => ({}) }) },
+    // 示範模式的檔案：上傳的放在記憶體；沒上傳過的路徑直接當成網址（示範照片放在 img/）
+    storage: { from: () => ({
+      createSignedUrl: async (p) => (FILES.has(p) ? { data: { signedUrl: FILES.get(p) }, error: null } : { error: { message: 'demo' } }),
+      createSignedUrls: async (ps) => ({ data: ps.map((p) => ({ path: p, signedUrl: FILES.get(p) || p, error: null })), error: null }),
+      upload: async (p, blob) => { FILES.set(p, URL.createObjectURL(blob)); return { data: { path: p }, error: null }; },
+      remove: async (ps) => { ps.forEach((p) => FILES.delete(p)); return { data: [], error: null }; },
+    }) },
     functions: { invoke: async () => ({ data: { ok: true }, error: null }) },
   };
 }

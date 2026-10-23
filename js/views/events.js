@@ -1,3 +1,4 @@
+import { secsOf, mySecs } from '../core.js';
 import { sb, state, me, route, go, esc, run, toast, formDialog, armDelete, pageHead, empty, fmtDate, fmtTime, fmtRange, chipPerson, nameOf, sectionChip, render, $, $$, DEMO } from '../core.js';
 import { KIND_LABEL, LEAVE_LABEL, ATT_LABEL, SECTIONS, sectionsOf, isAttend, eventDefaults, kindsDefaults, kindsLabel, twParts, twWeekday, twToIso, daysFromToday, defaultRollStatus } from '../logic.js';
 
@@ -16,7 +17,7 @@ export async function invokeFn(name, body) {
 export function forMe(e, mine = false) {
   if (!(e.kinds || [e.kind]).includes('sectional') || !sectionsOf(e).length) return true;
   if (!mine && state.p.officer) return true;
-  return sectionsOf(e).includes(state.profile?.section);
+  return sectionsOf(e).some((s) => mySecs().includes(s));
 }
 
 export function eventCard(e, { leave } = {}) {
@@ -234,7 +235,7 @@ route('/events/:id', async ({ id }) => {
   const yes = roster.filter((r) => isAttend(r)).length;
   const counts = Object.fromEntries(Object.keys(ATT_LABEL).map((k) => [k, roster.filter((r) => r.status === k).length]));
   const bySec = new Map();
-  for (const r of roster) { const s = state.people.get(r.user_id)?.section || '未分組'; if (!bySec.has(s)) bySec.set(s, []); bySec.get(s).push(r); }
+  for (const r of roster) { const s = secsOf(state.people.get(r.user_id))[0] || '未分組'; if (!bySec.has(s)) bySec.set(s, []); bySec.get(s).push(r); }
 
   const secOrder = (s) => { const i = SECTIONS.indexOf(s); return i < 0 ? 99 : i; };
   const secs = [...bySec].sort((a, b) => secOrder(a[0]) - secOrder(b[0]));

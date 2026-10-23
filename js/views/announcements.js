@@ -3,6 +3,53 @@ import { SECTIONS, twParts, twWeekday, twToIso } from '../logic.js';
 import { invokeFn } from './events.js';
 import { toolsBody, addToolBtn } from './tools.js';
 
+// ---------- 公告照片（Storage「photos」，不公開，用有時效的網址顯示） ----------
+const PHOTO_MAX = 9;
+export async function photoUrls(paths) {
+  const list = [...new Set(paths.filter(Boolean))];
+  if (!list.length) return new Map();
+  const { data } = await sb.storage.from('photos').createSignedUrls(list, 3600);
+  return new Map((data || []).filter((x) => x.signedUrl).map((x) => [x.path, x.signedUrl]));
+}
+// 縮成最長邊 1600px 的 JPEG，省空間也比較快
+function shrink(file, max = 1600) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file); const img = new Image();
+    img.onload = () => {
+      const k = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+      const c = document.createElement('canvas'); c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url);
+      c.toBlob((b) => (b ? resolve(b) : reject(new Error('照片轉檔失敗'))), 'image/jpeg', 0.85);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('這張照片讀不出來')); };
+    img.src = url;
+  });
+}
+async function uploadPhotos(files) {
+  const done = [];
+  for (const f of files) {
+    try {
+      const blob = await shrink(f);
+      const path = `${me()}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
+      const { error } = await sb.storage.from('photos').upload(path, blob, { contentType: 'image/jpeg' });
+      if (error) throw error;
+      done.push(path);
+    } catch (e) {
+      if (done.length) await sb.storage.from('photos').remove(done);
+      toast('照片上傳失敗：' + (e.message || e), 'bad');
+      return null;
+    }
+  }
+  return done;
+}
+const photosHtml = (a) => (a.photos?.length ? `<div class="ann-photos n-${Math.min(a.photos.length, 4)}">${a.photos.map((p) => `<a class="ann-ph" data-ph="${esc(p)}" target="_blank" rel="noopener" aria-label="開啟照片"><img alt="" loading="lazy"></a>`).join('')}</div>` : '');
+async function fillPhotos(root = document) {
+  const els = [...root.querySelectorAll('[data-ph]')];
+  if (!els.length) return;
+  const urls = await photoUrls(els.map((e) => e.dataset.ph));
+  els.forEach((e) => { const u = urls.get(e.dataset.ph); if (u) { e.href = u; e.querySelector('img').src = u; } else e.classList.add('missing'); });
+}
+
 // 公告分類（存在 announcements.channel）。open = 所有社員都能發（只能改自己的）
 export const CATS = {
   performance: { label: '華夏演出' },
@@ -39,6 +86,7 @@ async function editAnn(a = null, preset = '') {
   const people = activePeople().filter((p) => p.roles.some((r) => r !== 'ringer'))
     .sort((x, y) => roster.includes(y.id) - roster.includes(x.id) || nameOf(x.id).localeCompare(nameOf(y.id)));
   const officerOnly = Object.keys(CATS).filter((k) => !CATS[k].open);
+  const oldUrls = await photoUrls(a?.photos || []);
   const fields = [
     { name: 'cat', label: '類型', type: 'select', value: cat0, options: cats.map((k) => [k, CATS[k].label]) },
   ];
@@ -54,6 +102,7 @@ async function editAnn(a = null, preset = '') {
     { name: 'venue', label: '地點', value: a?.venue, placeholder: '例：國家音樂廳、中山堂', only: ['concerts'] },
     { name: 'link', label: '連結', type: 'url', value: a?.link, placeholder: 'https://（購票頁、影片、樂譜…）', only: ['concerts', 'resources'], full: true },
     { name: 'body', label: '內容', type: 'textarea', rows: 5, value: a?.body, full: true },
+    { name: 'photos', label: `照片／海報（最多 ${PHOTO_MAX} 張）`, type: 'photos', full: true, value: (a?.photos || []).map((path) => ({ path, url: oldUrls.get(path) || '' })) },
   );
   if (officer) fields.push(
     { name: 'mentions', label: '另外標記這些人（選填）', type: 'checks', full: true, value: a?.mentions || [], only: officerOnly,
@@ -66,7 +115,10 @@ async function editAnn(a = null, preset = '') {
     onChange: (name, value, d) => { if (name === 'cat' && DEFAULT_AUD[value] && d.querySelector('[name=audience]')) d.querySelector('[name=audience]').value = DEFAULT_AUD[value]; },
   });
   if (!v) return;
-  if (v.__danger) { await run(() => sb.from('announcements').delete().eq('id', a.id), '已刪除'); return render(); }
+  if (v.__danger) {
+    if (await run(() => sb.from('announcements').delete().eq('id', a.id), '已刪除') && a.photos?.length) await sb.storage.from('photos').remove(a.photos);
+    return render();
+  }
   const open = CATS[v.cat].open;
   const aud = open || !officer ? 'insiders' : v.audience;
   if (aud === 'section' && !v.section) return toast('對象是「某一組」時要選組別', 'bad');
@@ -78,7 +130,14 @@ async function editAnn(a = null, preset = '') {
     link: ['concerts', 'resources'].includes(v.cat) ? v.link : '',
     venue: v.cat === 'concerts' ? v.venue : '', event_at: v.cat === 'concerts' ? twToIso(v.date, v.time || '00:00') : null,
   };
+  if (v.photos.keep.length + v.photos.files.length > PHOTO_MAX) return toast(`一則最多 ${PHOTO_MAX} 張照片`, 'bad');
+  const added = v.photos.files.length ? await uploadPhotos(v.photos.files) : [];
+  if (!added) return;
+  row.photos = [...v.photos.keep, ...added];
   const r = await run(() => a ? sb.from('announcements').update(row).eq('id', a.id).select().single() : sb.from('announcements').insert(row).select().single(), a ? '已更新' : '已發布');
+  if (!r) { if (added.length) await sb.storage.from('photos').remove(added); return; }
+  const removed = (a?.photos || []).filter((p) => !row.photos.includes(p));
+  if (removed.length) await sb.storage.from('photos').remove(removed);
   if (r && officer && v.notify) await invokeFn('notify', { type: 'announcement', id: r.data.id }).catch((e) => toast('已發布，但通知沒送出：' + e.message, 'bad'));
   render();
 }
@@ -94,6 +153,7 @@ function postItem(a, read) {
         <h3>${esc(a.title)}</h3>
         <p class="meta-line">${t ? `<span class="mono">${t.time}</span>` : ''}${a.venue ? `　${esc(a.venue)}` : ''}${a.link ? `　<a href="${esc(a.link)}" target="_blank" rel="noopener">購票／詳情 →</a>` : ''}</p>
         ${a.body ? `<p class="body">${esc(a.body)}</p>` : ''}
+        ${photosHtml(a)}
         <div class="meta">${a.author ? `<span class="small muted">分享者</span>${chipPerson(a.author)}` : ''}</div></div></article>`;
   }
   const tagged = (a.mentions || []).includes(me()) || (a.mention_all && ROSTER.includes(me()));
@@ -102,6 +162,7 @@ function postItem(a, read) {
   return `<article class="ann c-${cat} ${read.has(a.id) ? '' : 'unread'} ${tagged ? 'tagged' : ''}">
     <div class="ann-head"><span class="atype c-${cat}">${catLabel(a)}</span>${a.pinned ? '<span class="chip gold">置頂</span>' : ''}${audChip}${edit}</div>
     <h3>${esc(a.title)}</h3>${a.body ? `<p class="body">${esc(a.body)}</p>` : ''}
+    ${photosHtml(a)}
     ${a.link ? `<p class="meta-line"><a href="${esc(a.link)}" target="_blank" rel="noopener">開啟連結 →</a></p>` : ''}
     ${mentionLine(a)}
     <div class="meta">${a.author ? chipPerson(a.author) : ''}<span class="mono small muted">${fmtDate(a.created_at)} ${fmtTime(a.created_at)}</span></div></article>`;
@@ -138,6 +199,7 @@ async function annPage() {
     $('#add-ann')?.addEventListener('click', () => editAnn(null, f));
     $$('[data-edit-ann]').forEach((b) => (b.onclick = () => editAnn(list.find((x) => x.id === b.dataset.editAnn))));
     $$('[data-af]').forEach((b) => (b.onclick = () => { sessionStorage.setItem('af', b.dataset.af); render(); }));
+    fillPhotos($('#main'));
     $('#edit-roster')?.addEventListener('click', editRoster);
     $('#go-teach')?.addEventListener('click', () => sessionStorage.setItem('grp', '教學班'));
     $('#past-toggle')?.addEventListener('click', () => { sessionStorage.setItem('cpast', sessionStorage.getItem('cpast') === '1' ? '0' : '1'); render(); });

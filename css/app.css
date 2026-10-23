@@ -585,3 +585,26 @@ input.pick { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); 
 .class-roster + .class-roster { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 12px; }
 .class-roster h3 { font-size: 16px; margin-bottom: 6px; }
 .class-roster p { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; margin-bottom: 6px; }
+
+/* 公告照片 */
+.ann-photos { display: grid; gap: 6px; margin-top: 12px; max-width: 560px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.ann-photos.n-1 { grid-template-columns: minmax(0, 1fr); max-width: 420px; }
+.ann-photos.n-2, .ann-photos.n-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 420px; }
+.ann-ph { display: block; aspect-ratio: 1 / 1; border-radius: 10px; overflow: hidden; background: var(--sunk); border: 1px solid var(--line); }
+.ann-photos.n-1 .ann-ph { aspect-ratio: auto; max-height: 420px; }
+.ann-ph img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.ann-photos.n-1 .ann-ph img { height: auto; max-height: 420px; object-fit: contain; }
+.ann-ph.missing { display: none; }
+.photo-field { display: grid; gap: 8px; }
+.photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 6px; }
+.photo-grid:empty { display: none; }
+.ph-item { position: relative; aspect-ratio: 1 / 1; border-radius: 8px; overflow: hidden; background: var(--sunk); border: 1px solid var(--line); }
+.ph-item img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.ph-item.del img { opacity: .25; }
+.ph-item.del::after { content: "會移除"; position: absolute; inset: auto 0 6px; text-align: center; font-size: 11px; color: var(--bad); font-weight: 700; }
+.ph-x { position: absolute; top: 4px; right: 4px; width: 24px; height: 24px; border-radius: 50%; border: 0; background: rgba(0,0,0,.6); color: #fff; font-size: 12px; cursor: pointer; display: grid; place-items: center; }
+.ph-add { justify-self: start; cursor: pointer; }
+
+/* iPhone 的日期、時間欄位會比其他欄位寬、文字置中：統一成一般輸入框 */
+input[type="date"], input[type="time"] { -webkit-appearance: none; appearance: none; min-width: 0; max-width: 100%; display: block; min-height: 44px; text-align: left; }
+input[type="date"]::-webkit-date-and-time-value, input[type="time"]::-webkit-date-and-time-value { text-align: left; }

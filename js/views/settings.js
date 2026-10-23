@@ -32,10 +32,10 @@ async function backup(btn) {
     if (state.semester) {
       const { data: st } = await sb.rpc('attendance_stats', { sem: state.semester.id });
       download(`華夏出席率-${state.semester.name}-${day}.csv`, toCSV([['姓名', '組別', '目前出席率%', '整學期出席率%', '出席', '晚到', '早退', '請假', '缺席'],
-        ...(st || []).map((r) => [name(r.user_id), data.profiles.find((x) => x.id === r.user_id)?.section, r.current_rate, r.total_rate, r.present, r.late, r.early, r.excused, r.absent])]), 'text/csv');
+        ...(st || []).map((r) => [name(r.user_id), (((p) => (p?.sections?.length ? p.sections : [p?.section]).filter(Boolean).join('、'))(data.profiles.find((x) => x.id === r.user_id))), r.current_rate, r.total_rate, r.present, r.late, r.early, r.excused, r.absent])]), 'text/csv');
     }
     download(`華夏名冊-${day}.csv`, toCSV([['姓名', '顯示名稱', '組別', '樂器', '身分組', '幹部職位', '狀態'],
-      ...data.profiles.map((p) => [p.real_name, p.display_name, p.section, p.instruments, data.user_roles.filter((r) => r.user_id === p.id).map((r) => ROLE_LABEL[r.role]), p.officer_title, { active: '啟用', pending: '待核准', inactive: '停用' }[p.status]])]), 'text/csv');
+      ...data.profiles.map((p) => [p.real_name, p.display_name, (p.sections?.length ? p.sections : [p.section]).filter(Boolean).join('、'), p.instruments, data.user_roles.filter((r) => r.user_id === p.id).map((r) => ROLE_LABEL[r.role]), p.officer_title, { active: '啟用', pending: '待核准', inactive: '停用' }[p.status]])]), 'text/csv');
     await sb.from('settings').upsert({ key: 'last_backup_at', value: new Date().toISOString() });
     await loadShared(); toast('已下載備份，請存到雲端硬碟', 'ok'); render();
   } catch (e) { toast('備份失敗：' + e.message, 'bad'); btn.disabled = false; btn.textContent = old; }

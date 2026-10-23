@@ -1,3 +1,4 @@
+import { secsOf } from '../core.js';
 import { sb, state, me, route, esc, run, toast, formDialog, pageHead, empty, avatar, nameOf, sectionChip, roleChips, render, $, $$, loadShared } from '../core.js';
 import { SECTIONS, ROLE_LABEL } from '../logic.js';
 import { invokeFn } from './events.js';
@@ -7,17 +8,18 @@ async function editMember(u, priv) {
   const fields = [
     { name: 'display_name', label: '顯示名稱', value: u.display_name },
     { name: 'real_name', label: '本名', value: u.real_name },
-    { name: 'section', label: '組別', type: 'select', value: u.section || '', options: [['', '（未分組）'], ...SECTIONS.map((s) => [s, s])] },
+    { name: 'sections', label: '組別（可複選）', type: 'checks', full: true, value: secsOf(u), options: SECTIONS.map((s) => [s, s]), hint: '同時在兩組就都勾，例如彈撥＋打擊。第一個勾的算主要組別' },
     { name: 'instruments', label: '樂器', value: u.instruments, placeholder: '例：二胡／中胡' },
   ];
   if (p.admin) fields.push(
-    { name: 'roles', label: '身分組', type: 'checks', full: true, value: u.roles, options: Object.entries(ROLE_LABEL), hint: '可以多選。組長管理的是他「組別」欄位的那一組。' },
+    { name: 'roles', label: '身分組', type: 'checks', full: true, value: u.roles, options: Object.entries(ROLE_LABEL), hint: '可以多選。組長管理的是他勾選的組別（勾兩組就管兩組）。' },
     { name: 'officer_title', label: '幹部職位', value: u.officer_title, placeholder: '例：副社、總務、公關、器材、文書、教學' },
     { name: 'status', label: '帳號狀態', type: 'select', value: u.status, options: [['active', '啟用'], ['pending', '待核准'], ['inactive', '停用（已離團或畢業）']] },
   );
   const v = await formDialog({ title: `${nameOf(u.id)}${priv?.email ? `・${priv.email}` : ''}`, fields });
   if (!v) return;
-  const row = { display_name: v.display_name, real_name: v.real_name, section: v.section || null, instruments: v.instruments };
+  const sections = SECTIONS.filter((s) => v.sections.includes(s));
+  const row = { display_name: v.display_name, real_name: v.real_name, sections, section: sections[0] || null, instruments: v.instruments };
   if (p.admin) Object.assign(row, { officer_title: v.officer_title, status: v.status });
   const ok = await run(() => sb.from('profiles').update(row).eq('id', u.id));
   if (!ok) return;
@@ -83,8 +85,8 @@ route('/members', async () => {
   if (!batch) sel.clear();
   const box = (id) => batch ? `<input type="checkbox" class="pick" data-pick="${id}" ${sel.has(id) ? 'checked' : ''} aria-label="選取">` : '';
   const list = people.filter((u) => u.status === 'active' || (showInactive && u.status === 'inactive'))
-    .filter((u) => !f || (f === 'ringer' || f === 'alumni' ? u.roles.includes(f) : f === 'officer' ? u.roles.some((r) => r === 'officer' || r === 'admin') : u.section === f))
-    .sort((a, b) => SECTIONS.indexOf(a.section) - SECTIONS.indexOf(b.section) || nameOf(a.id).localeCompare(nameOf(b.id)));
+    .filter((u) => !f || (f === 'ringer' || f === 'alumni' ? u.roles.includes(f) : f === 'officer' ? u.roles.some((r) => r === 'officer' || r === 'admin') : secsOf(u).includes(f)))
+    .sort((a, b) => SECTIONS.indexOf(secsOf(a)[0]) - SECTIONS.indexOf(secsOf(b)[0]) || nameOf(a.id).localeCompare(nameOf(b.id)));
   setTimeout(() => {
     $$('[data-mf]').forEach((b) => (b.onclick = () => { sessionStorage.setItem('mf', b.dataset.mf); render(); }));
     $('#mi')?.addEventListener('click', () => { sessionStorage.setItem('mi', showInactive ? '0' : '1'); render(); });
@@ -111,7 +113,7 @@ route('/members', async () => {
     `<div class="seg wrap"><button data-mf="" aria-pressed="${!f}">全部</button>${SECTIONS.map((s) => `<button data-mf="${s}" aria-pressed="${f === s}">${s}</button>`).join('')}<button data-mf="officer" aria-pressed="${f === 'officer'}">幹部</button><button data-mf="ringer" aria-pressed="${f === 'ringer'}">槍手</button><button data-mf="alumni" aria-pressed="${f === 'alumni'}">校友</button></div>` +
     (list.length ? `<div class="tbl-wrap"><table class="${p.officer || batch ? 'click' : ''}"><thead><tr><th>成員</th><th>組別</th><th>樂器</th><th>身分</th>${p.officer ? '<th>Email</th>' : ''}</tr></thead><tbody>
       ${list.map((u) => `<tr data-member="${u.id}" class="${u.status === 'inactive' ? 'inactive' : ''}"><td><span class="person">${box(u.id)}${avatar(u.id, 24)}<b>${esc(nameOf(u.id))}</b>${u.real_name && u.real_name !== u.display_name ? `<span class="muted small">${esc(u.real_name)}</span>` : ''}</span></td>
-        <td>${sectionChip(u.section)}</td><td class="small">${esc(u.instruments)}</td><td><div class="chips">${roleChips(u.roles)}${u.officer_title ? `<span class="chip gold">${esc(u.officer_title)}</span>` : ''}</div></td>
+        <td><div class="chips">${secsOf(u).map(sectionChip).join('')}</div></td><td class="small">${esc(u.instruments)}</td><td><div class="chips">${roleChips(u.roles)}${u.officer_title ? `<span class="chip gold">${esc(u.officer_title)}</span>` : ''}</div></td>
         ${p.officer ? `<td class="small muted">${esc(privOf(u.id)?.email || '')}</td>` : ''}</tr>`).join('')}
     </tbody></table></div>` : empty('這個分類沒有成員'));
 });

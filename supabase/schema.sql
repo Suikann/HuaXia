@@ -24,6 +24,23 @@ create table if not exists public.profiles (
   created_at timestamptz not null default now()
 );
 
+-- 一個人可以同時在好幾組（例：彈撥＋打擊）；section 自動等於第一組（主要組別），給只看單一組別的地方用
+alter table public.profiles add column if not exists sections text[] not null default '{}'
+  check (sections <@ array['吹管','拉弦','彈撥','打擊','低音']::text[]);
+create or replace function public.profiles_sections() returns trigger language plpgsql as $$
+begin
+  if tg_op = 'UPDATE' and new.section is distinct from old.section and new.sections is not distinct from old.sections then
+    new.sections := case when new.section is null then '{}'::text[] else array[new.section] end;  -- 只改了 section（舊版畫面）
+  elsif (new.sections is null or cardinality(new.sections) = 0) and new.section is not null and tg_op = 'INSERT' then
+    new.sections := array[new.section];
+  end if;
+  new.section := case when cardinality(new.sections) > 0 then new.sections[1] else null end;
+  return new;
+end $$;
+drop trigger if exists profiles_sections on public.profiles;
+create trigger profiles_sections before insert or update on public.profiles for each row execute function public.profiles_sections();
+update public.profiles set sections = array[section] where cardinality(sections) = 0 and section is not null;
+
 -- 只有本人與幹部看得到的聯絡資料
 create table if not exists public.profile_private (
   user_id uuid primary key references public.profiles(id) on delete cascade,
@@ -333,6 +350,11 @@ alter table public.announcements add column if not exists link text not null def
 alter table public.announcements add column if not exists mentions uuid[] not null default '{}';
 alter table public.announcements add column if not exists mention_all boolean not null default false;
 
+-- 公告照片：Storage「photos」裡的路徑（<上傳者 id>/<檔名>），最多 9 張
+alter table public.announcements add column if not exists photos text[] not null default '{}';
+alter table public.announcements drop constraint if exists announcements_photos_max;
+alter table public.announcements add constraint announcements_photos_max check (cardinality(photos) <= 9);
+
 -- 2026-10 公告分類改版：channel 就是分類
 --   performance 華夏演出｜tutti 大團｜sizhu 絲竹｜class 教學班｜alumni 校友團｜concerts 音樂會｜resources 資源
 --   舊的 main 依 type 自動轉換；對象多一個 sizhu（大家看得到，提醒絲竹成員）
@@ -463,10 +485,16 @@ create or replace function public.my_section() returns text
 language sql stable security definer set search_path = public as $$
   select section from profiles where id = auth.uid()
 $$;
+-- 一個人可以同時在好幾組（例：彈撥＋打擊）；沒有 sections 時用 section
+create or replace function public.my_sections() returns text[]
+language sql stable security definer set search_path = public as $$
+  select case when cardinality(sections) > 0 then sections when section is not null then array[section] else '{}'::text[] end
+  from profiles where id = auth.uid()
+$$;
 create or replace function public.leads_user(uid uuid) returns boolean
 language sql stable security definer set search_path = public as $$
   select public.has_role('leader') and exists (select 1 from profiles p where p.id = uid
-    and p.section is not null and p.section = public.my_section())
+    and (case when cardinality(p.sections) > 0 then p.sections else array[p.section] end) && public.my_sections())
 $$;
 create or replace function public.in_piece(pid uuid) returns boolean
 language sql stable security definer set search_path = public as $$
@@ -520,7 +548,7 @@ begin
     if k = 'officer' then
       if exists (select 1 from user_roles where user_id = uid and role in ('admin','officer')) then return true; end if;
     elsif k = 'sectional' then
-      if exists (select 1 from profiles where id = uid and section = any(case when cardinality(e.sections) > 0 then e.sections else array[e.section] end)) then return true; end if;
+      if exists (select 1 from profiles where id = uid and (case when cardinality(sections) > 0 then sections else array[section] end) && (case when cardinality(e.sections) > 0 then e.sections else array[e.section] end)) then return true; end if;
     elsif k = 'class' then
       if exists (select 1 from class_students where class_id = e.class_id and user_id = uid) then return true; end if;
     elsif has_pieces then
@@ -690,7 +718,7 @@ begin
   if new.status is distinct from old.status or new.officer_title is distinct from old.officer_title then
     raise exception '只有管理員能變更帳號狀態或職位';
   end if;
-  if (new.section is distinct from old.section) and not public.is_officer() then
+  if (new.section is distinct from old.section or new.sections is distinct from old.sections) and not public.is_officer() then
     raise exception '組別由幹部設定';
   end if;
   return new;
@@ -755,7 +783,7 @@ create policy cal_admin on public.calendars for all using (public.is_admin()) wi
 create or replace function public.can_staff_part(pid uuid) returns boolean
 language sql stable security definer set search_path = public as $$
   select public.is_officer() or (public.is_active() and exists (select 1 from piece_parts pp where pp.id = pid and (
-    pp.tutor_id = auth.uid() or (public.has_role('leader') and pp.section is not null and pp.section = public.my_section()))))
+    pp.tutor_id = auth.uid() or (public.has_role('leader') and pp.section is not null and pp.section = any(public.my_sections())))))
 $$;
 -- 曲目與編制：社內成員看全部；槍手只看自己參與的曲目
 create policy piece_read on public.pieces for select using (public.is_insider() or public.in_piece(id));
@@ -784,7 +812,7 @@ language sql stable security definer set search_path = public as $$
       or exists (select 1 from piece_parts pp where pp.piece_id = s.piece_id and pp.tutor_id = auth.uid())))
     -- 舊的分組樂譜（相容）
     or (s.part_id is null and s.section is not null and (
-      (public.is_insider() and s.section = public.my_section())
+      (public.is_insider() and s.section = any(public.my_sections()))
       or exists (select 1 from piece_parts pp where pp.piece_id = s.piece_id and pp.section = s.section and public.in_part(pp.id))))
 $$;
 -- 樂譜：幹部與指導老師看全部；分譜看自己聲部；分組樂譜看自己那一組
@@ -831,7 +859,7 @@ create policy ann_read on public.announcements for select using (
   public.is_officer() or case audience
     when 'all' then public.is_active()
     when 'insiders' then public.is_insider()
-    when 'section' then public.is_insider() and section = public.my_section()
+    when 'section' then public.is_insider() and section = any(public.my_sections())
     when 'newbies' then public.has_role('newbie')
     when 'ringers' then public.has_role('ringer')
     when 'sizhu' then public.is_insider()
@@ -888,6 +916,19 @@ create policy scores_read on storage.objects for select using (
     select 1 from public.scores s where s.file_path = storage.objects.name and public.can_read_score(s))));
 create policy scores_write on storage.objects for insert with check (bucket_id = 'scores' and public.is_officer());
 create policy scores_delete on storage.objects for delete using (bucket_id = 'scores' and public.is_officer());
+
+-- 公告照片：不公開；看得到那則公告的人才看得到照片。上傳只能放進自己的資料夾，刪除限本人或幹部
+insert into storage.buckets (id, name, public) values ('photos', 'photos', false) on conflict (id) do nothing;
+drop policy if exists photos_read on storage.objects;
+drop policy if exists photos_write on storage.objects;
+drop policy if exists photos_delete on storage.objects;
+create policy photos_read on storage.objects for select using (
+  bucket_id = 'photos' and (split_part(name, '/', 1) = auth.uid()::text
+    or exists (select 1 from public.announcements a where storage.objects.name = any(a.photos))));
+create policy photos_write on storage.objects for insert with check (
+  bucket_id = 'photos' and public.is_insider() and split_part(name, '/', 1) = auth.uid()::text);
+create policy photos_delete on storage.objects for delete using (
+  bucket_id = 'photos' and (split_part(name, '/', 1) = auth.uid()::text or public.is_officer()));
 
 -- =====================================================================
 -- 泠靈（Ling Ling Suite）發譜函式（介面與依賴的欄位見 docs/LINGLING.md）

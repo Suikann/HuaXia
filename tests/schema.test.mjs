@@ -314,6 +314,48 @@ test('總譜：絲竹曲目大家都看得到；大團曲目只有組長、聲�
 const P3 = '22222222-2222-2222-2222-222222222223', P4 = '22222222-2222-2222-2222-222222222224';
 const llPath = (piece, c, slot = 'score') => `lingling/${piece}/${c.repeat(64)}-${slot}.pdf`;
 const publish = (uid, payload) => as(uid, `select lingling_publish('${JSON.stringify({ version: 1, ...payload }).replace(/'/g, "''")}'::jsonb) as r`);
+test('公告照片：只能上傳到自己的資料夾；看得到那則公告的人才看得到照片；最多 9 張', async () => {
+  await db.exec('alter table storage.objects enable row level security');
+  try {
+    const put = (u, name) => as(u, `insert into storage.objects (bucket_id,name) values ('photos','${name}')`);
+    assert.equal((await put(B, `${B}/b1.jpg`)).error, undefined);           // 自己的資料夾
+    assert.ok((await put(B, `${A}/fake.jpg`)).error);                       // 別人的資料夾
+    assert.ok((await put(R, `${R}/r1.jpg`)).error);                         // 槍手不能上傳
+    assert.equal((await put(A, `${A}/p1.jpg`)).error, undefined);
+    const see = async (u) => (await as(u, `select name from storage.objects where bucket_id='photos' and name='${A}/p1.jpg'`)).rows.length;
+    assert.equal(await see(B), 0);                                          // 還沒放進任何公告
+    await as(A, `insert into announcements (id,channel,title,audience,photos) values ('66666666-6666-6666-6666-666666666661','tutti','幹部照片','officers',array['${A}/p1.jpg'])`);
+    assert.equal(await see(B), 0);                                          // 公告只給幹部 → 社員看不到照片
+    await as(A, `update announcements set audience='insiders' where id='66666666-6666-6666-6666-666666666661'`);
+    assert.equal(await see(B), 1);                                          // 改成全體社員 → 看得到
+    assert.equal(await see(R), 0);                                          // 槍手看不到社內公告的照片
+    assert.ok((await as(B, `delete from storage.objects where bucket_id='photos' and name='${A}/p1.jpg' returning name`)).rows?.length !== 1); // 不能刪別人的
+    const ten = Array.from({ length: 10 }, (_, i) => `'${A}/x${i}.jpg'`).join(',');
+    assert.ok((await as(A, `insert into announcements (channel,title,photos) values ('tutti','太多張',array[${ten}])`)).error);
+  } finally {
+    await db.exec('alter table storage.objects disable row level security');
+  }
+});
+
+test('一個人可以同時在好幾組：分部課、組內公告、組長排人都算進去', async () => {
+  const C = '00000000-0000-0000-0000-00000000000d';
+  await db.exec(`insert into auth.users values ('${C}','c@x','{"name":"阿C"}')`);
+  await as(A, `update profiles set status='active', sections=array['彈撥','打擊'] where id='${C}'; insert into user_roles values ('${C}','member')`);
+  assert.equal((await as(A, `select section from profiles where id='${C}'`)).rows[0].section, '彈撥');   // 主要組別＝第一組
+  assert.ok((await as(C, `update profiles set sections=array['吹管'] where id='${C}'`)).error);          // 自己不能改組別
+  // 分部課：打擊的也要到
+  const EV = '55555555-5555-5555-5555-5555555555b1';
+  await as(A, `insert into events (id,semester_id,kinds,sections,title,starts_at,ends_at,calendar_key) values ('${EV}','${S}',array['sectional'],array['打擊'],'打擊分部','2026-11-22 10:00+08','2026-11-22 12:00+08','tutti')`);
+  assert.equal((await as(A, `select public.is_expected(e, '${C}') as ok from events e where e.id='${EV}'`)).rows[0].ok, true);
+  // 組內公告：發給打擊組的也看得到
+  await as(A, `insert into announcements (channel,title,audience,section) values ('tutti','打擊組公告','section','打擊')`);
+  assert.equal((await as(C, `select 1 from announcements where title='打擊組公告'`)).rows.length, 1);
+  assert.equal((await as(B, `select 1 from announcements where title='打擊組公告'`)).rows.length, 0);  // 拉弦的看不到
+  // 舊版畫面只改 section：sections 跟著換
+  await as(A, `update profiles set section='低音' where id='${C}'`);
+  assert.deepEqual((await as(A, `select sections from profiles where id='${C}'`)).rows[0].sections, ['低音']);
+});
+
 const upload = (...paths) => db.exec(`insert into storage.objects (bucket_id, name) values ${paths.map((p) => `('scores','${p}')`).join(',')}`);
 
 test('泠靈發譜：版本查詢；登入的人才能呼叫，版本不符時整個不做', async () => {

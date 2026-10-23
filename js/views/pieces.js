@@ -1,3 +1,4 @@
+import { secsOf, mySecs } from '../core.js';
 import { sb, state, me, route, go, esc, run, toast, formDialog, pageHead, empty, chipPerson, activePeople, nameOf, render, $, $$, DEMO, sectionChip } from '../core.js';
 import { partShortage, SECTIONS, guessSection, autoSeat, reconcileSeats, STAGES, parseNeeded, matchPart, partNameFromFile } from '../logic.js';
 import { seatSvg } from './seating.js';
@@ -54,7 +55,7 @@ async function editPart(pieceId, part = null, nextSort = 1) {
 
 async function assign(part, asg, ringers) {
   const cur = asg.filter((a) => a.part_id === part.id);
-  const people = activePeople().filter((p) => p.roles.some((r) => r !== 'teacher')).map((p) => [p.id, `${nameOf(p.id)}${p.section ? `（${p.section}）` : ''}`]);
+  const people = activePeople().filter((p) => p.roles.some((r) => r !== 'teacher')).map((p) => [p.id, `${nameOf(p.id)}${secsOf(p).length ? `（${secsOf(p).join('、')}）` : ''}`]);
   const rs = ringers.filter((r) => r.status === 'accepted' && !r.user_id).map((r) => ['r:' + r.id, `${r.name}（槍手${r.school ? '・' + r.school : ''}）`]);
   const v = await formDialog({
     title: `排人：${part.name}`, submit: '儲存',
@@ -208,8 +209,7 @@ route('/pieces/:id', async ({ id }) => {
     sb.from('seating_charts').select('*').eq('piece_id', id).maybeSingle(),
   ]);
   // 排人：幹部全部；組長排自己組；小老師排自己帶的聲部（與資料庫 can_staff_part 一致）
-  const mySec = state.profile?.section;
-  const canStaff = (pt) => p.officer || pt.tutor_id === me() || (p.leader && mySec && (pt.section || guessSection(pt.name)) === mySec);
+  const canStaff = (pt) => p.officer || pt.tutor_id === me() || (p.leader && mySecs().includes(pt.section || guessSection(pt.name)));
   const pieceAsg = asg.filter((a) => pts.some((x) => x.id === a.part_id));
   const seatStage = { ...STAGES.hall, style: 'arc', ...(chart?.stage || {}) };
   const seatList = chart?.seats?.length ? reconcileSeats(chart.seats, pts, pieceAsg).seats : autoSeat(pts, pieceAsg, seatStage);
