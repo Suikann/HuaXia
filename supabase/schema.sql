@@ -333,6 +333,11 @@ alter table public.announcements add column if not exists link text not null def
 alter table public.announcements add column if not exists mentions uuid[] not null default '{}';
 alter table public.announcements add column if not exists mention_all boolean not null default false;
 
+-- 公告照片：Storage「photos」裡的路徑（<上傳者 id>/<檔名>），最多 9 張
+alter table public.announcements add column if not exists photos text[] not null default '{}';
+alter table public.announcements drop constraint if exists announcements_photos_max;
+alter table public.announcements add constraint announcements_photos_max check (cardinality(photos) <= 9);
+
 -- 2026-10 公告分類改版：channel 就是分類
 --   performance 華夏演出｜tutti 大團｜sizhu 絲竹｜class 教學班｜alumni 校友團｜concerts 音樂會｜resources 資源
 --   舊的 main 依 type 自動轉換；對象多一個 sizhu（大家看得到，提醒絲竹成員）
@@ -888,6 +893,19 @@ create policy scores_read on storage.objects for select using (
     select 1 from public.scores s where s.file_path = storage.objects.name and public.can_read_score(s))));
 create policy scores_write on storage.objects for insert with check (bucket_id = 'scores' and public.is_officer());
 create policy scores_delete on storage.objects for delete using (bucket_id = 'scores' and public.is_officer());
+
+-- 公告照片：不公開；看得到那則公告的人才看得到照片。上傳只能放進自己的資料夾，刪除限本人或幹部
+insert into storage.buckets (id, name, public) values ('photos', 'photos', false) on conflict (id) do nothing;
+drop policy if exists photos_read on storage.objects;
+drop policy if exists photos_write on storage.objects;
+drop policy if exists photos_delete on storage.objects;
+create policy photos_read on storage.objects for select using (
+  bucket_id = 'photos' and (split_part(name, '/', 1) = auth.uid()::text
+    or exists (select 1 from public.announcements a where storage.objects.name = any(a.photos))));
+create policy photos_write on storage.objects for insert with check (
+  bucket_id = 'photos' and public.is_insider() and split_part(name, '/', 1) = auth.uid()::text);
+create policy photos_delete on storage.objects for delete using (
+  bucket_id = 'photos' and (split_part(name, '/', 1) = auth.uid()::text or public.is_officer()));
 
 -- =====================================================================
 -- 泠靈（Ling Ling Suite）發譜函式（介面與依賴的欄位見 docs/LINGLING.md）

@@ -144,6 +144,9 @@ export function formDialog({ title, fields, submit = '儲存', danger = null, sw
       if (f.type === 'textarea') ctl = `<textarea id="${id}" name="${f.name}" ${req} rows="${f.rows || 4}">${esc(v)}</textarea>`;
       else if (f.type === 'select') ctl = `<select id="${id}" name="${f.name}" ${req}>${f.options.map(([k, l]) => `<option value="${esc(k)}" ${String(k) === String(v) ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
       else if (f.type === 'checks') ctl = `<div class="checks">${f.options.map(([k, l]) => `<label class="check"><input type="checkbox" name="${f.name}" value="${esc(k)}" ${(v || []).includes(k) ? 'checked' : ''}><span>${esc(l)}</span></label>`).join('') || '<span class="muted">沒有可選的項目</span>'}</div>`;
+      else if (f.type === 'photos') ctl = `<div class="photo-field" data-photos="${f.name}">
+        <div class="photo-grid">${(v || []).map((u, i) => `<div class="ph-item" data-keep="${i}"><img src="${esc(u.url || '')}" alt=""><button type="button" class="ph-x" aria-label="移除這張">✕</button></div>`).join('')}</div>
+        <label class="btn sm ph-add"><input type="file" accept="image/*" multiple hidden>＋ 加照片</label></div>`;
       else if (f.type === 'toggle') ctl = `<label class="check"><input type="checkbox" id="${id}" name="${f.name}" ${v ? 'checked' : ''}><span>${esc(f.text || '')}</span></label>`;
       else ctl = `<input id="${id}" name="${f.name}" type="${f.type || 'text'}" value="${esc(v)}" ${req} ${f.min != null ? `min="${f.min}"` : ''} ${f.step ? `step="${f.step}"` : ''} placeholder="${esc(f.placeholder || '')}">`;
       return `<div class="field ${f.full ? 'full' : ''}" ${f.only ? `data-only="${f.only.join(' ')}"` : ''}><label for="${id}">${esc(f.label)}</label>${ctl}${f.hint ? `<small>${esc(f.hint)}</small>` : ''}</div>`;
@@ -167,6 +170,7 @@ export function formDialog({ title, fields, submit = '儲存', danger = null, sw
       const out = {};
       for (const f of fields) {
         if (f.type === 'note') continue;
+        if (f.type === 'photos') { const box = d.querySelector(`[data-photos="${f.name}"]`); out[f.name] = { keep: [...box.querySelectorAll('[data-keep]:not(.del)')].map((x) => (f.value || [])[+x.dataset.keep].path), files: (box._files || []).filter(Boolean) }; continue; }
         if (f.type === 'checks') out[f.name] = [...d.querySelectorAll(`input[name="${f.name}"]:checked`)].map((x) => x.value);
         else if (f.type === 'toggle') out[f.name] = d.querySelector(`[name="${f.name}"]`).checked;
         else { const val = d.querySelector(`[name="${f.name}"]`).value.trim(); out[f.name] = f.type === 'number' ? (val === '' ? null : Number(val)) : val; }
@@ -180,6 +184,24 @@ export function formDialog({ title, fields, submit = '儲存', danger = null, sw
     };
     d.addEventListener('change', (e) => { if (e.target.name) onChange?.(e.target.name, e.target.value, d); sync(); });
     sync();
+    d.querySelectorAll('[data-photos]').forEach((box) => {
+      box._files = [];
+      const max = 9, count = () => box.querySelectorAll('.ph-item:not(.del)').length;
+      box.addEventListener('click', (e) => {
+        const x = e.target.closest('.ph-x'); if (!x) return;
+        const it = x.closest('.ph-item');
+        if (it.dataset.new != null) { box._files[+it.dataset.new] = null; it.remove(); } else it.classList.toggle('del');
+      });
+      box.querySelector('input[type=file]').addEventListener('change', (e) => {
+        for (const file of e.target.files) {
+          if (!file.type.startsWith('image/')) continue;
+          if (count() >= max) { toast(`一則最多 ${max} 張照片`, 'bad'); break; }
+          const i = box._files.push(file) - 1;
+          box.querySelector('.photo-grid').insertAdjacentHTML('beforeend', `<div class="ph-item" data-new="${i}"><img src="${URL.createObjectURL(file)}" alt=""><button type="button" class="ph-x" aria-label="移除這張">✕</button></div>`);
+        }
+        e.target.value = '';
+      });
+    });
     d.showModal();
     d.querySelector('input,textarea,select')?.focus();
   });
