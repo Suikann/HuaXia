@@ -166,6 +166,7 @@ export function formDialog({ title, fields, submit = '儲存', danger = null, sw
     d.className = 'dlg';
     const field = (f) => {
       if (f.type === 'note') return `<p class="field full small muted">${esc(f.text)}</p>`;
+      if (f.type === 'info') { const rows = f.rows.filter(([, val]) => val); return `<dl class="field full info-list">${rows.map(([k, val]) => `<dt>${esc(k)}</dt><dd>${esc(val)}</dd>`).join('') || `<dd class="muted">${esc(f.empty || '沒有資料')}</dd>`}</dl>`; }
       const id = `f-${f.name}`; const v = f.value ?? '';
       const req = f.required ? 'required' : '';
       let ctl;
@@ -197,7 +198,7 @@ export function formDialog({ title, fields, submit = '儲存', danger = null, sw
       e.preventDefault();
       const out = {};
       for (const f of fields) {
-        if (f.type === 'note') continue;
+        if (f.type === 'note' || f.type === 'info') continue;
         if (f.type === 'photos') { const box = d.querySelector(`[data-photos="${f.name}"]`); out[f.name] = { keep: [...box.querySelectorAll('[data-keep]:not(.del)')].map((x) => (f.value || [])[+x.dataset.keep].path), files: (box._files || []).filter(Boolean) }; continue; }
         if (f.type === 'checks') out[f.name] = [...d.querySelectorAll(`input[name="${f.name}"]:checked`)].map((x) => x.value);
         else if (f.type === 'toggle') out[f.name] = d.querySelector(`[name="${f.name}"]`).checked;
