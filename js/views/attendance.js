@@ -31,6 +31,7 @@ route('/attendance', async () => {
     const l = stats.filter((x) => secsOf(state.people.get(x.user_id)).includes(s) && x.current_rate != null);
     return [s, l.length ? l.reduce((a, b) => a + Number(b.current_rate), 0) / l.length : null, l.length];
   });
+  const myDetail = await detail(me());  // 先載完自己的明細，再綁定按鈕（不然正式網站會綁不到）
   setTimeout(() => {
     $$('[data-sec]').forEach((b) => (b.onclick = () => { sessionStorage.setItem('attSec', b.dataset.sec); render(); }));
     $$('[data-who]').forEach((tr) => (tr.onclick = async () => {
@@ -40,7 +41,7 @@ route('/attendance', async () => {
   const rules = state.settings.attendance_rules || {};
   return pageHead('出席', `${esc(state.semester.name)}・「目前」只算已點名的場次，「整學期」連同之後的場次一起算。沒排到曲目的場次算無曲，不列入。`) +
     `<section class="card me-att"><div class="rings bign">${rateRing(mine?.current_rate ?? null, '目前')}${rateRing(mine?.total_rate ?? null, '整學期')}</div>
-      <div class="me-att-detail"><h2>我的紀錄</h2>${await detail(me())}</div></section>` +
+      <div class="me-att-detail"><h2>我的紀錄</h2>${myDetail}</div></section>` +
     (others.length ? `<section class="card">
       <div class="card-head"><h2>${p.officer ? '全團' : '組員'}出席率</h2><span class="muted small">晚到／早退有預告算 ${rules.late_weight ?? 1} 次、沒預告算 ${rules.unexcused_weight ?? 0.5} 次・請假${rules.excused_mode === 'exclude' ? '不列入分母' : '算缺席'}</span></div>
       ${p.officer ? `<div class="sec-bars">${bySec.map(([s, r, n]) => `<div class="sec-bar"><span>${sectionChip(s)}</span><div class="bar"><i class="rate-${rateLevel(r)}" style="width:${r ?? 0}%"></i></div><span class="mono small">${r == null ? '—' : Math.round(r) + '%'}</span></div>`).join('')}</div>

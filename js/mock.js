@@ -91,6 +91,9 @@ function fixtures() {
   };
 }
 
+// 網址加 &slow：每次讀資料延遲 300ms，模擬正式網站等資料庫回應（用來抓「資料還沒到就先綁按鈕」這類問題）
+const SLOW = new URLSearchParams(location.search).has('slow');
+const lag = () => (SLOW ? new Promise((r) => setTimeout(r, 300)) : Promise.resolve());
 const DB = fixtures();
 const FILES = new Map();
 const singular = (t) => t.replace(/ies$/, 'y').replace(/s$/, '');
@@ -135,7 +138,7 @@ class Q {
   upsert(rows) { this.op = 'upsert'; this.payload = [].concat(rows); return this; }
   update(v) { this.op = 'update'; this.payload = v; return this; }
   delete() { this.op = 'delete'; return this; }
-  then(res, rej) { return Promise.resolve(this.exec()).then(res, rej); }
+  then(res, rej) { return lag().then(() => this.exec()).then(res, rej); }
   exec() {
     const T = (DB[this.t] ||= []);
     let rows;
@@ -215,7 +218,7 @@ export function createMock() {
   const session = { user: { id: ME, email: 'demo@example.com' } };
   return {
     from: (t) => new Q(t),
-    rpc: async (fn, args) => ({ data: RPC[fn] ? RPC[fn](args || {}) : null, error: null }),
+    rpc: async (fn, args) => { await lag(); return { data: RPC[fn] ? RPC[fn](args || {}) : null, error: null }; },
     auth: {
       getSession: async () => ({ data: { session } }),
       getUserIdentities: async () => ({ data: { identities: [{ provider: 'email' }, { provider: 'discord', identity_data: { avatar_url: 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 40 40%22%3E%3Crect width=%2240%22 height=%2240%22 fill=%22%235865f2%22/%3E%3C/svg%3E' } }] } }),

@@ -58,12 +58,14 @@ async function sectionView(sec) {
 
 route('/groups', async () => {
   const tab = pickTab();
-  setTimeout(() => $$('[data-grp]').forEach((b) => (b.onclick = () => { sessionStorage.setItem('grp', b.dataset.grp); render(); })));
   const secs = visibleSecs();
   const tabs = [...SECTIONS, TEACH];
+  // 先等這一組的資料載完，再綁定分頁的點擊（不然正式網站資料還在載入時就綁，會綁不到）
+  const body = tab === TEACH ? `<p class="small muted grp-note">新生教學班與進度，帶課的人在這裡勾選學員的進度。</p>${await classesTab()}` : await sectionView(tab);
+  setTimeout(() => $$('[data-grp]').forEach((b) => (b.onclick = () => { sessionStorage.setItem('grp', b.dataset.grp); render(); })));
   return pageHead('各組', '各聲部的成員、分部課、組內公告與出席，以及新生教學班。') +
     `<div class="grp-tabs" role="tablist">${tabs.map((t) => { const ok = t === TEACH || secs.includes(t);
       return `<button role="tab" ${ok ? `data-grp="${t}"` : 'disabled title="只有這組的組員可以點進去"'} aria-selected="${t === tab}" class="${t === TEACH ? 'teach' : `sec-${t}`} ${ok ? '' : 'locked'} ${state.p.officer && mySecs().includes(t) ? 'is-mine' : ''}">${t}</button>`; }).join('')}</div>` +
     (!secs.length ? `<p class="small muted grp-note">你還沒有分組，幹部幫你設定組別後，這裡就會出現你的組。</p>` : '') +
-    (tab === TEACH ? `<p class="small muted grp-note">新生教學班與進度，帶課的人在這裡勾選學員的進度。</p>${await classesTab()}` : await sectionView(tab));
+    body;
 });
