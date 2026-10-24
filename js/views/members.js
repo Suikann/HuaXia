@@ -5,8 +5,10 @@ import { invokeFn } from './events.js';
 
 async function editMember(u, priv) {
   const p = state.p;
+  // 自我介紹沒有放進共用名冊（太長），點開時才讀
+  const bio = (await sb.from('profiles').select('bio').eq('id', u.id).maybeSingle()).data?.bio || '';
   const fields = [
-    { type: 'info', empty: '他還沒填「我的資料」', rows: [['系級', u.grade], ['學校', u.school], ['手機', priv?.phone], ['Email', priv?.email], ['Google 帳號', priv?.google_email], ['自我介紹', u.bio]] },
+    { type: 'info', empty: '他還沒填「我的資料」', rows: [['系級', u.grade], ['學校', u.school], ['手機', priv?.phone], ['Email', priv?.email], ['Google 帳號', priv?.google_email], ['自我介紹', bio]] },
     { name: 'display_name', label: '顯示名稱', value: u.display_name },
     { name: 'real_name', label: '本名', value: u.real_name },
     { name: 'sections', label: '組別（可複選）', type: 'checks', full: true, value: secsOf(u), options: SECTIONS.map((s) => [s, s]), hint: '同時在兩組就都勾，例如彈撥＋打擊' },
