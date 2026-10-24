@@ -2,7 +2,8 @@
 import { perms, twParts, twWeekday, ROLE_LABEL, linkErrorFromUrl } from './logic.js';
 
 const cfg = window.HUAXIA_CONFIG || {};
-export const DEMO = new URLSearchParams(location.search).has('demo') || window.HUAXIA_DEMO === true;
+// 示範模式已從正式網站移除（2026-10-24）；只有另外準備的離線測試版會設定 HUAXIA_DEMO 並附上假資料
+export const DEMO = window.HUAXIA_DEMO === true;
 
 export let sb = null;
 

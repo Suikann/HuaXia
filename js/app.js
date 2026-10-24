@@ -143,8 +143,7 @@ function waitingScreen() {
 
 function setupScreen() {
   $('#app').innerHTML = `<div class="auth"><div class="auth-card">${authHead(false)}<h1>還差一步：連接資料庫</h1>
-    <p class="muted">請依照 <code>docs/SETUP.md</code> 建立 Supabase 專案，並把網址與 publishable key 填進 <code>config.js</code>。</p>
-    <p><a class="btn" href="?demo">先看示範模式</a></p></div></div>`;
+    <p class="muted">請依照 <code>docs/SETUP.md</code> 建立 Supabase 專案，並把網址與 publishable key 填進 <code>config.js</code>。</p></div></div>`;
 }
 
 // ---------- 啟動 ----------
