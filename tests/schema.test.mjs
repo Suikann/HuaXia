@@ -372,6 +372,21 @@ test('永久管理員：網站上不能拿掉管理員身分、不能停用；�
   assert.equal((await as(A, `delete from user_roles where user_id='${P}' and role='admin'`)).error, undefined);
 });
 
+test('點名：各組組長可以幫全團點名，看得到全團名單與請假；一般社員不行', async () => {
+  const Ld = '00000000-0000-0000-0000-00000000001a', Mb = '00000000-0000-0000-0000-00000000001b';
+  await db.exec(`insert into auth.users values ('${Ld}','ld@x','{"name":"吹管組長"}'),('${Mb}','mb@x','{"name":"彈撥社員"}')`);
+  await as(A, `update profiles set status='active', sections=array['吹管'] where id='${Ld}'; update profiles set status='active', sections=array['彈撥'] where id='${Mb}';
+    insert into user_roles values ('${Ld}','member'),('${Ld}','leader'),('${Mb}','member')`);
+  const EV = '55555555-5555-5555-5555-5555555555c1';
+  await as(A, `insert into events (id,semester_id,kinds,title,starts_at,ends_at,calendar_key) values ('${EV}','${S}',array['tutti'],'大團點名測試','2026-11-03 19:30+08','2026-11-03 21:30+08','tutti')`);
+  await as(Mb, `insert into leave_requests (event_id,type,reason) values ('${EV}','late','上課')`);
+  const roster = (await as(Ld, `select user_id, leave_type from public.event_roster('${EV}')`)).rows;
+  assert.ok(roster.some((r) => r.user_id === Mb && r.leave_type === 'late'));        // 看得到別組的人與請假
+  assert.equal((await as(Ld, `insert into attendance (event_id,user_id,status) values ('${EV}','${Mb}','late')`)).error, undefined);  // 可以點別組
+  assert.equal((await as(Ld, `select status from attendance where event_id='${EV}' and user_id='${Mb}'`)).rows[0].status, 'late');
+  assert.ok((await as(Mb, `insert into attendance (event_id,user_id,status) values ('${EV}','${Ld}','present')`)).error);  // 社員不能點名
+});
+
 const upload = (...paths) => db.exec(`insert into storage.objects (bucket_id, name) values ${paths.map((p) => `('scores','${p}')`).join(',')}`);
 
 test('泠靈發譜：版本查詢；登入的人才能呼叫，版本不符時整個不做', async () => {

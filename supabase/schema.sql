@@ -579,7 +579,7 @@ begin
     left join leave_requests l on l.event_id = eid and l.user_id = p.id
     where p.status = 'active'
       and (public.is_expected(e, p.id) or a.user_id is not null or l.user_id is not null)
-      and (public.is_officer() or p.id = auth.uid() or public.leads_user(p.id));
+      and (public.is_officer() or public.has_role('leader') or p.id = auth.uid());  -- 組長可以幫全團點名
 end $$;
 
 -- 出席率統計（目前／整學期）
@@ -874,15 +874,16 @@ create policy evp_write on public.event_pieces for all using (public.is_officer(
 
 -- 請假：本人寫；幹部與組長看得到
 create policy leave_read on public.leave_requests for select using (
-  user_id = auth.uid() or public.is_officer() or public.leads_user(user_id));
+  user_id = auth.uid() or public.is_officer() or public.has_role('leader'));
 create policy leave_own on public.leave_requests for all using (user_id = auth.uid())
   with check (user_id = auth.uid() and public.is_active());
 
 -- 點名：幹部全部；組長點自己組員
+-- 點名：幹部與各組組長都可以幫全團點名
 create policy att_read on public.attendance for select using (
-  user_id = auth.uid() or public.is_officer() or public.leads_user(user_id));
-create policy att_write on public.attendance for all using (public.is_officer() or public.leads_user(user_id))
-  with check (public.is_officer() or public.leads_user(user_id));
+  user_id = auth.uid() or public.is_officer() or public.has_role('leader'));
+create policy att_write on public.attendance for all using (public.is_officer() or public.has_role('leader'))
+  with check (public.is_officer() or public.has_role('leader'));
 
 -- 公告
 create policy ann_read on public.announcements for select using (
