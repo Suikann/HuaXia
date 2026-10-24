@@ -620,7 +620,7 @@ input[type="date"]::-webkit-date-and-time-value, input[type="time"]::-webkit-dat
 
 /* 公告分類：有新公告的紅點 */
 .seg button { position: relative; }
-.new-dot { position: absolute; top: 4px; right: 4px; width: 8px; height: 8px; border-radius: 50%; background: #e5484d; box-shadow: 0 0 0 2px var(--bg); }
+.new-dot { position: absolute; top: 4px; right: 4px; width: 8px; height: 8px; border-radius: 50%; background: #c2456a; box-shadow: 0 0 0 2px var(--bg); }  /* 玫瑰紅 */
 /* 音樂會：右上角的分類與編輯不再疊在標題上 */
 .ann.concert .ann-head { position: static; margin-bottom: 2px; }
 .ann.concert .ann-head:empty { display: none; }

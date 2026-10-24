@@ -196,7 +196,8 @@ async function annPage() {
   const unread = list.filter((a) => !read.has(a.id));
   // 各分類有沒有還沒看過的（現在這個分類看了就算已讀，所以不標）
   const dots = new Set((data || []).filter((a) => !read.has(a.id) && catOf(a) !== f).map(catOf));
-  if (unread.length) sb.from('announcement_reads').upsert(unread.map((a) => ({ ann_id: a.id, user_id: me() }))).then(() => document.dispatchEvent(new Event('unread-changed')));
+  // 只有點進某個分類才算看過那個分類；停在「全部」不清掉任何紅點
+  if (f && unread.length) sb.from('announcement_reads').upsert(unread.map((a) => ({ ann_id: a.id, user_id: me() }))).then(() => document.dispatchEvent(new Event('unread-changed')));
   setTimeout(() => {
     $('#add-ann')?.addEventListener('click', () => editAnn(null, f));
     $$('[data-edit-ann]').forEach((b) => (b.onclick = () => editAnn(list.find((x) => x.id === b.dataset.editAnn))));
