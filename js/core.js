@@ -52,6 +52,29 @@ export async function loadMe() {
     const url = await discordAvatar();
     if (url && !(await sb.from('profiles').update({ avatar_url: url }).eq('id', uid)).error) profile.avatar_url = url;
   }
+  if (profile?.avatar_url?.startsWith('data:') && !DEMO) moveInlineAvatar(profile);  // 不等它，避免拖慢開網站
+}
+
+// ---------- 頭像：存在 Storage「avatars」（公開），資料表只記網址 ----------
+const AV_PUBLIC = '/storage/v1/object/public/avatars/';
+export async function uploadAvatar(blob) {
+  const path = `${me()}/${Date.now()}.jpg`;
+  const { error } = await sb.storage.from('avatars').upload(path, blob, { contentType: 'image/jpeg', upsert: true });
+  if (error) throw error;
+  return sb.storage.from('avatars').getPublicUrl(path).data.publicUrl;
+}
+// 刪掉自己之前上傳的頭像檔（Discord 頭像、舊的內嵌圖不用刪）
+export async function removeOldAvatar(url) {
+  const i = String(url || '').indexOf(AV_PUBLIC);
+  if (i >= 0) await sb.storage.from('avatars').remove([decodeURIComponent(url.slice(i + AV_PUBLIC.length).split('?')[0])]).catch(() => {});
+}
+// 以前直接存在資料表裡的頭像（data: 開頭）搬到 Storage；登入時自動做一次，失敗就下次再試
+async function moveInlineAvatar(profile) {
+  try {
+    const blob = await (await fetch(profile.avatar_url)).blob();
+    const url = await uploadAvatar(blob);
+    if (!(await sb.from('profiles').update({ avatar_url: url }).eq('id', profile.id)).error) profile.avatar_url = url;
+  } catch { /* 下次登入再試 */ }
 }
 
 // 已綁定的 Discord 帳號頭像網址；沒有綁就回傳 null

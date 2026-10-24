@@ -1,8 +1,8 @@
 import { secsOf } from '../core.js';
-import { sb, state, me, route, esc, run, toast, pageHead, avatar, nameOf, sectionChip, roleChips, render, $, $$, loadShared, discordAvatar, getTheme, setTheme } from '../core.js';
+import { sb, state, me, route, esc, run, toast, pageHead, avatar, nameOf, sectionChip, roleChips, render, $, $$, loadShared, discordAvatar, getTheme, setTheme, uploadAvatar, removeOldAvatar } from '../core.js';
 import { calendarsFor, LINK_DISCORD_TAKEN } from '../logic.js';
 
-// 頭像：裁成正方形、縮成小圖，直接存在 profiles.avatar_url（不需要另外的檔案空間）
+// 頭像：裁成正方形、縮成小圖，上傳到 Storage「avatars」，profiles.avatar_url 只記網址
 function squareImage(file, size) {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file); const img = new Image();
@@ -10,14 +10,16 @@ function squareImage(file, size) {
       const side = Math.min(img.naturalWidth, img.naturalHeight);
       const c = document.createElement('canvas'); c.width = c.height = size;
       c.getContext('2d').drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, size, size);
-      URL.revokeObjectURL(url); resolve(c.toDataURL('image/jpeg', 0.85));
+      URL.revokeObjectURL(url); c.toBlob((b) => (b ? resolve(b) : reject(new Error('bad image'))), 'image/jpeg', 0.85);
     };
     img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('bad image')); };
     img.src = url;
   });
 }
 async function saveAvatar(value, okMsg) {
+  const old = state.profile?.avatar_url;
   if (!(await run(() => sb.from('profiles').update({ avatar_url: value }).eq('id', me()), okMsg))) return;
+  if (old && old !== value) removeOldAvatar(old);
   state.profile = { ...state.profile, avatar_url: value };
   const p = state.people.get(me()); if (p) p.avatar_url = value;
   const sum = $('.me-menu summary'); if (sum) sum.innerHTML = avatar(me(), 32);
@@ -56,7 +58,8 @@ route('/me', async () => {
       const f = e.target.files?.[0]; e.target.value = '';
       if (!f) return;
       if (!f.type.startsWith('image/')) return toast('請選一張圖片', 'bad');
-      try { await saveAvatar(await squareImage(f, 160), '頭像已更新'); } catch { toast('這張圖片讀不出來，換一張試試', 'bad'); }
+      let url; try { url = await uploadAvatar(await squareImage(f, 256)); } catch (err) { return toast(/bad image/.test(err?.message) ? '這張圖片讀不出來，換一張試試' : '頭像上傳失敗：' + (err?.message || err), 'bad'); }
+      await saveAvatar(url, '頭像已更新');
     });
   });
   return pageHead('我的設定') +

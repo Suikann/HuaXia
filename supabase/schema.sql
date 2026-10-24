@@ -579,7 +579,7 @@ begin
     left join leave_requests l on l.event_id = eid and l.user_id = p.id
     where p.status = 'active'
       and (public.is_expected(e, p.id) or a.user_id is not null or l.user_id is not null)
-      and (public.is_officer() or p.id = auth.uid() or public.leads_user(p.id));
+      and (public.is_officer() or public.has_role('leader') or p.id = auth.uid());  -- 組長可以幫全團點名
 end $$;
 
 -- 出席率統計（目前／整學期）
@@ -710,10 +710,40 @@ drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created after insert on auth.users
   for each row execute function public.handle_new_user();
 
+-- 永久管理員：名單只能在 Supabase 的 SQL Editor 設定（網站上任何人，包括其他管理員，都不能改名單）。
+-- 名單上的人：網站上不能拿掉他的管理員身分，也不能停用他的帳號；要解除只能在 SQL Editor 刪掉名單那一列。
+create table if not exists public.protected_admins (
+  user_id uuid primary key references public.profiles(id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+alter table public.protected_admins enable row level security;
+drop policy if exists protected_admins_read on public.protected_admins;
+create policy protected_admins_read on public.protected_admins for select using (public.is_active());
+create or replace function public.is_protected_admin(uid uuid) returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from protected_admins where user_id = uid)
+$$;
+create or replace function public.guard_protected_admin() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  -- auth.uid() 是空的 = 在 SQL Editor 直接操作，允許
+  if auth.uid() is not null and old.role = 'admin' and public.is_protected_admin(old.user_id)
+     and (tg_op = 'DELETE' or new.role is distinct from 'admin' or new.user_id is distinct from old.user_id) then
+    raise exception '這位是永久管理員，不能移除管理員身分';
+  end if;
+  return case when tg_op = 'DELETE' then old else new end;
+end $$;
+drop trigger if exists guard_protected_admin on public.user_roles;
+create trigger guard_protected_admin before update or delete on public.user_roles
+  for each row execute function public.guard_protected_admin();
+
 -- 個人資料：本人只能改基本欄位；狀態與職位只有管理員能改；組別與樂器幹部也能改
 create or replace function public.guard_profile() returns trigger
 language plpgsql security definer set search_path = public as $$
 begin
+  if auth.uid() is not null and new.status is distinct from old.status and public.is_protected_admin(old.id) then
+    raise exception '這位是永久管理員，不能停用帳號';
+  end if;
   if auth.uid() is null or public.is_admin() then return new; end if;
   if new.status is distinct from old.status or new.officer_title is distinct from old.officer_title then
     raise exception '只有管理員能變更帳號狀態或職位';
@@ -844,15 +874,16 @@ create policy evp_write on public.event_pieces for all using (public.is_officer(
 
 -- 請假：本人寫；幹部與組長看得到
 create policy leave_read on public.leave_requests for select using (
-  user_id = auth.uid() or public.is_officer() or public.leads_user(user_id));
+  user_id = auth.uid() or public.is_officer() or public.has_role('leader'));
 create policy leave_own on public.leave_requests for all using (user_id = auth.uid())
   with check (user_id = auth.uid() and public.is_active());
 
 -- 點名：幹部全部；組長點自己組員
+-- 點名：幹部與各組組長都可以幫全團點名
 create policy att_read on public.attendance for select using (
-  user_id = auth.uid() or public.is_officer() or public.leads_user(user_id));
-create policy att_write on public.attendance for all using (public.is_officer() or public.leads_user(user_id))
-  with check (public.is_officer() or public.leads_user(user_id));
+  user_id = auth.uid() or public.is_officer() or public.has_role('leader'));
+create policy att_write on public.attendance for all using (public.is_officer() or public.has_role('leader'))
+  with check (public.is_officer() or public.has_role('leader'));
 
 -- 公告
 create policy ann_read on public.announcements for select using (
@@ -916,6 +947,18 @@ create policy scores_read on storage.objects for select using (
     select 1 from public.scores s where s.file_path = storage.objects.name and public.can_read_score(s))));
 create policy scores_write on storage.objects for insert with check (bucket_id = 'scores' and public.is_officer());
 create policy scores_delete on storage.objects for delete using (bucket_id = 'scores' and public.is_officer());
+
+-- 頭像：公開讀取（只是大頭貼）；只能上傳、取代、刪除自己資料夾（<user id>/…）裡的檔案
+insert into storage.buckets (id, name, public) values ('avatars', 'avatars', true) on conflict (id) do nothing;
+drop policy if exists avatars_write on storage.objects;
+drop policy if exists avatars_update on storage.objects;
+drop policy if exists avatars_delete on storage.objects;
+create policy avatars_write on storage.objects for insert with check (
+  bucket_id = 'avatars' and auth.uid() is not null and split_part(name, '/', 1) = auth.uid()::text);
+create policy avatars_update on storage.objects for update using (
+  bucket_id = 'avatars' and split_part(name, '/', 1) = auth.uid()::text);
+create policy avatars_delete on storage.objects for delete using (
+  bucket_id = 'avatars' and split_part(name, '/', 1) = auth.uid()::text);
 
 -- 公告照片：不公開；看得到那則公告的人才看得到照片。上傳只能放進自己的資料夾，刪除限本人或幹部
 insert into storage.buckets (id, name, public) values ('photos', 'photos', false) on conflict (id) do nothing;

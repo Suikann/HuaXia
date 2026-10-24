@@ -356,6 +356,48 @@ test('一個人可以同時在好幾組：分部課、組內公告、組長排�
   assert.deepEqual((await as(A, `select sections from profiles where id='${C}'`)).rows[0].sections, ['低音']);
 });
 
+test('永久管理員：網站上不能拿掉管理員身分、不能停用；名單也不能從網站改；SQL Editor 可以解除', async () => {
+  const P = '00000000-0000-0000-0000-00000000000e';
+  await db.exec(`insert into auth.users values ('${P}','p@x','{"name":"永久"}')`);
+  await as(A, `update profiles set status='active' where id='${P}'; insert into user_roles values ('${P}','member'),('${P}','admin')`);
+  assert.ok((await as(A, `insert into protected_admins (user_id) values ('${P}')`)).error);          // 網站上不能加名單
+  await db.exec(`insert into protected_admins (user_id) values ('${P}')`);                           // SQL Editor 加
+  assert.match((await as(A, `delete from user_roles where user_id='${P}' and role='admin'`)).error, /永久管理員/);
+  assert.match((await as(A, `update user_roles set role='member' where user_id='${P}' and role='admin'`)).error || '', /永久管理員|duplicate/);
+  assert.match((await as(A, `update profiles set status='inactive' where id='${P}'`)).error, /永久管理員/);
+  assert.equal((await as(A, `update profiles set officer_title='社長' where id='${P}'`)).error, undefined);  // 其他欄位照常能改
+  assert.ok((await as(P, `delete from protected_admins where user_id='${P}'`)).rows?.length !== 1);  // 自己也不能從網站移出名單
+  assert.equal((await as(A, `select 1 from user_roles where user_id='${P}' and role='admin'`)).rows.length, 1);
+  await db.exec(`delete from protected_admins where user_id='${P}'`);                                // SQL Editor 解除
+  assert.equal((await as(A, `delete from user_roles where user_id='${P}' and role='admin'`)).error, undefined);
+});
+
+test('點名：各組組長可以幫全團點名，看得到全團名單與請假；一般社員不行', async () => {
+  const Ld = '00000000-0000-0000-0000-00000000001a', Mb = '00000000-0000-0000-0000-00000000001b';
+  await db.exec(`insert into auth.users values ('${Ld}','ld@x','{"name":"吹管組長"}'),('${Mb}','mb@x','{"name":"彈撥社員"}')`);
+  await as(A, `update profiles set status='active', sections=array['吹管'] where id='${Ld}'; update profiles set status='active', sections=array['彈撥'] where id='${Mb}';
+    insert into user_roles values ('${Ld}','member'),('${Ld}','leader'),('${Mb}','member')`);
+  const EV = '55555555-5555-5555-5555-5555555555c1';
+  await as(A, `insert into events (id,semester_id,kinds,title,starts_at,ends_at,calendar_key) values ('${EV}','${S}',array['tutti'],'大團點名測試','2026-11-03 19:30+08','2026-11-03 21:30+08','tutti')`);
+  await as(Mb, `insert into leave_requests (event_id,type,reason) values ('${EV}','late','上課')`);
+  const roster = (await as(Ld, `select user_id, leave_type from public.event_roster('${EV}')`)).rows;
+  assert.ok(roster.some((r) => r.user_id === Mb && r.leave_type === 'late'));        // 看得到別組的人與請假
+  assert.equal((await as(Ld, `insert into attendance (event_id,user_id,status) values ('${EV}','${Mb}','late')`)).error, undefined);  // 可以點別組
+  assert.equal((await as(Ld, `select status from attendance where event_id='${EV}' and user_id='${Mb}'`)).rows[0].status, 'late');
+  assert.ok((await as(Mb, `insert into attendance (event_id,user_id,status) values ('${EV}','${Ld}','present')`)).error);  // 社員不能點名
+});
+
+test('頭像：只能上傳到自己的資料夾，不能刪別人的', async () => {
+  await db.exec('alter table storage.objects enable row level security');
+  try {
+    assert.equal((await as(B, `insert into storage.objects (bucket_id,name) values ('avatars','${B}/a.jpg')`)).error, undefined);
+    assert.ok((await as(B, `insert into storage.objects (bucket_id,name) values ('avatars','${A}/a.jpg')`)).error);
+    await db.exec(`insert into storage.objects (bucket_id,name) values ('avatars','${A}/mine.jpg')`);
+    await as(B, `delete from storage.objects where bucket_id='avatars' and name='${A}/mine.jpg'`);
+    assert.equal((await db.exec(`select 1 from storage.objects where name='${A}/mine.jpg'`))[0].rows.length, 1);
+  } finally { await db.exec('alter table storage.objects disable row level security'); }
+});
+
 const upload = (...paths) => db.exec(`insert into storage.objects (bucket_id, name) values ${paths.map((p) => `('scores','${p}')`).join(',')}`);
 
 test('泠靈發譜：版本查詢；登入的人才能呼叫，版本不符時整個不做', async () => {
