@@ -43,6 +43,6 @@
 | 資料被誤刪 | — | 用最近一次備份的 .json 還原（需要懂程式的人協助，備份檔裡每個表格的資料都完整保留） |
 
 ## 給接手的開發者
-- 修改流程：改程式 → `npm test`（要全部通過）→ 本機 `python3 -m http.server` 開 `?demo` 檢查 → 推上 `main`，約 1 分鐘後生效。
+- 修改流程：改程式 → `npm test`（要全部通過）→ 本機 `python3 -m http.server` 開網站登入檢查 → 推上 `main`，約 1 分鐘後生效。
 - 改資料庫結構時，`supabase/schema.sql` 要能重複執行；先在 Supabase 執行完，再推網站。
 - 開發紀錄看 `HANDOFF.md`。

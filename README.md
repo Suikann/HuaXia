@@ -18,8 +18,9 @@
 
 ```bash
 python3 -m http.server 8000
-# 開 http://localhost:8000/?demo 看示範模式（虛構資料，不連資料庫）
+# 開 http://localhost:8000/ ，會連到 config.js 設定的 Supabase（要登入）
 ```
+示範模式（假資料）已在 2026-10-24 移除。
 
 ## 測試
 
@@ -35,7 +36,6 @@ index.html, config.js, css/app.css
 js/app.js        外框、選單、登入流程
 js/core.js       連線、狀態、表單對話框、路由
 js/logic.js      純邏輯（有測試）
-js/mock.js       示範模式的假資料
 js/views/*.js    各頁面
 supabase/schema.sql            資料表、權限、出席率計算
 supabase/functions/*           Edge Functions 原始碼

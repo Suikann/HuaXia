@@ -620,3 +620,8 @@ input[type="date"]::-webkit-date-and-time-value, input[type="time"]::-webkit-dat
 .ann.concert .ann-head:empty { display: none; }
 .ann.concert h3 { padding-right: 0; }
 .grp-tabs button.locked, .grp-tabs button.locked:hover { opacity: .4; cursor: not-allowed; color: var(--muted); border-color: var(--line); background: var(--surface); }
+
+/* 公告連結（可以好幾個） */
+.ann-links { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.ann-links a { display: inline-flex; align-items: center; gap: 4px; padding: 4px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--sunk); font-size: 13px; color: var(--accent); }
+.ann-links a:hover { border-color: var(--accent); text-decoration: none; }

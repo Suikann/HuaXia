@@ -5,6 +5,20 @@ import { toolsBody, addToolBtn } from './tools.js';
 
 // ---------- 公告照片（Storage「photos」，不公開，用有時效的網址顯示） ----------
 const PHOTO_MAX = 9;
+
+// ---------- 連結：一則可以放好幾個（一行一個），依網址標成「YouTube」「Google 雲端」等 ----------
+const linksOf = (a) => String(a.link || '').split(/\s+/).filter((u) => /^https?:\/\/\S+$/i.test(u));
+function linkLabel(u) {
+  let h = ''; try { h = new URL(u).hostname.replace(/^www\./, ''); } catch { return '連結'; }
+  if (/(^|\.)youtube\.com$|^youtu\.be$/.test(h)) return 'YouTube';
+  if (/^drive\.google\.com$|^docs\.google\.com$/.test(h)) return 'Google 雲端';
+  if (/^photos\.google\.com$|^photos\.app\.goo\.gl$/.test(h)) return 'Google 相簿';
+  if (/(^|\.)instagram\.com$/.test(h)) return 'Instagram';
+  if (/(^|\.)facebook\.com$|^fb\.me$/.test(h)) return 'Facebook';
+  return h;
+}
+const linksHtml = (list) => (list.length ? `<p class="ann-links">${list.map((u) => `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(linkLabel(u))} ↗</a>`).join('')}</p>` : '');
+
 export async function photoUrls(paths) {
   const list = [...new Set(paths.filter(Boolean))];
   if (!list.length) return new Map();
@@ -100,7 +114,7 @@ async function editAnn(a = null, preset = '') {
     { name: 'date', label: '日期', type: 'date', value: ev?.date || '', only: ['concerts'] },
     { name: 'time', label: '開演時間', type: 'time', value: ev?.time || '19:30', only: ['concerts'] },
     { name: 'venue', label: '地點', value: a?.venue, placeholder: '例：國家音樂廳、中山堂', only: ['concerts'] },
-    { name: 'link', label: '連結', type: 'url', value: a?.link, placeholder: 'https://（購票頁、影片、樂譜…）', only: ['concerts', 'resources'], full: true },
+    { name: 'link', label: '連結（選填，一行一個）', type: 'textarea', rows: 2, value: a?.link, placeholder: 'https://drive.google.com/…\nhttps://youtu.be/…', full: true, hint: '雲端相簿、練團影片、購票頁、樂譜都可以，一行放一個網址' },
     { name: 'body', label: '內容', type: 'textarea', rows: 5, value: a?.body, full: true },
     { name: 'photos', label: `照片／海報（最多 ${PHOTO_MAX} 張）`, type: 'photos', full: true, value: (a?.photos || []).map((path) => ({ path, url: oldUrls.get(path) || '' })) },
   );
@@ -112,6 +126,15 @@ async function editAnn(a = null, preset = '') {
   );
   const v = await formDialog({
     title: a ? '編輯' : '發布', danger: a ? '刪除' : null, submit: a ? '儲存' : '發布', fields, switchBy: 'cat',
+    validate: (o) => {
+      const aud = CATS[o.cat]?.open || !officer ? 'insiders' : o.audience;
+      if (aud === 'section' && !o.section) return '對象是「某一組」時要選組別';
+      if (o.cat === 'concerts' && !o.date) return '音樂會要填日期';
+      const bad = (o.link || '').split(/\s+/).filter(Boolean).find((u) => !/^https?:\/\/\S+$/i.test(u));
+      if (bad) return `連結要以 https:// 開頭：${bad.slice(0, 40)}`;
+      if (o.photos && o.photos.keep.length + o.photos.files.length > PHOTO_MAX) return `一則最多 ${PHOTO_MAX} 張照片`;
+      return null;
+    },
     onChange: (name, value, d) => { if (name === 'cat' && DEFAULT_AUD[value] && d.querySelector('[name=audience]')) d.querySelector('[name=audience]').value = DEFAULT_AUD[value]; },
   });
   if (!v) return;
@@ -123,11 +146,14 @@ async function editAnn(a = null, preset = '') {
   const aud = open || !officer ? 'insiders' : v.audience;
   if (aud === 'section' && !v.section) return toast('對象是「某一組」時要選組別', 'bad');
   if (v.cat === 'concerts' && !v.date) return toast('音樂會要填日期', 'bad');
+  const links = v.link.split(/\s+/).filter(Boolean);
+  const badLink = links.find((u) => !/^https?:\/\/\S+$/i.test(u));
+  if (badLink) return toast(`連結要以 https:// 開頭：${badLink.slice(0, 40)}`, 'bad');
   const row = {
     channel: v.cat, type: 'other', title: v.title, body: v.body, pinned: officer ? v.pinned : false,
     audience: aud, section: aud === 'section' ? v.section : null,
     mention_all: false, mentions: officer && !open ? v.mentions : [],
-    link: ['concerts', 'resources'].includes(v.cat) ? v.link : '',
+    link: links.join('\n'),
     venue: v.cat === 'concerts' ? v.venue : '', event_at: v.cat === 'concerts' ? twToIso(v.date, v.time || '00:00') : null,
   };
   if (v.photos.keep.length + v.photos.files.length > PHOTO_MAX) return toast(`一則最多 ${PHOTO_MAX} 張照片`, 'bad');
@@ -151,8 +177,9 @@ function postItem(a, read) {
       <div class="ev-date">${t ? `<b>${t.month}/${t.day}</b><span>週${twWeekday(a.event_at)}</span>` : '<b>—</b>'}</div>
       <div><div class="ann-head"><span class="atype c-concerts">音樂會</span>${a.pinned ? '<span class="chip gold">置頂</span>' : ''}${edit}</div>
         <h3>${esc(a.title)}</h3>
-        <p class="meta-line">${t ? `<span class="mono">${t.time}</span>` : ''}${a.venue ? `　${esc(a.venue)}` : ''}${a.link ? `　<a href="${esc(a.link)}" target="_blank" rel="noopener">購票／詳情 →</a>` : ''}</p>
+        <p class="meta-line">${t ? `<span class="mono">${t.time}</span>` : ''}${a.venue ? `　${esc(a.venue)}` : ''}${linksOf(a)[0] ? `　<a href="${esc(linksOf(a)[0])}" target="_blank" rel="noopener">購票／詳情 →</a>` : ''}</p>
         ${a.body ? `<p class="body">${esc(a.body)}</p>` : ''}
+        ${linksHtml(linksOf(a).slice(1))}
         ${photosHtml(a)}
         <div class="meta">${a.author ? `<span class="small muted">分享者</span>${chipPerson(a.author)}` : ''}</div></div></article>`;
   }
@@ -163,7 +190,7 @@ function postItem(a, read) {
     <div class="ann-head"><span class="atype c-${cat}">${catLabel(a)}</span>${a.pinned ? '<span class="chip gold">置頂</span>' : ''}${audChip}${edit}</div>
     <h3>${esc(a.title)}</h3>${a.body ? `<p class="body">${esc(a.body)}</p>` : ''}
     ${photosHtml(a)}
-    ${a.link ? `<p class="meta-line"><a href="${esc(a.link)}" target="_blank" rel="noopener">開啟連結 →</a></p>` : ''}
+    ${linksHtml(linksOf(a))}
     ${mentionLine(a)}
     <div class="meta">${a.author ? chipPerson(a.author) : ''}<span class="mono small muted">${fmtDate(a.created_at)} ${fmtTime(a.created_at)}</span></div></article>`;
 }

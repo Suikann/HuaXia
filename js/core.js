@@ -2,7 +2,8 @@
 import { perms, twParts, twWeekday, ROLE_LABEL, linkErrorFromUrl } from './logic.js';
 
 const cfg = window.HUAXIA_CONFIG || {};
-export const DEMO = new URLSearchParams(location.search).has('demo') || window.HUAXIA_DEMO === true;
+// 示範模式已從正式網站移除（2026-10-24）；只有另外準備的離線測試版會設定 HUAXIA_DEMO 並附上假資料
+export const DEMO = window.HUAXIA_DEMO === true;
 
 export let sb = null;
 
@@ -135,7 +136,8 @@ export async function run(fn, ok) {
 // ---------- 表單對話框 ----------
 // fields: [{ name, label, type: text|textarea|date|time|number|select|checks|url|email|toggle, options, value, required, hint, full }]
 // only：['concerts',...] → 這個欄位只在 switchBy 欄位選到這些值時顯示；onChange(name, value, dialog) 讓頁面依選擇調整其他欄位
-export function formDialog({ title, fields, submit = '儲存', danger = null, switchBy = null, onChange = null }) {
+// validate(out)：送出前檢查，回傳錯誤訊息就跳提示並保留視窗（不會清掉已經填的內容）
+export function formDialog({ title, fields, submit = '儲存', danger = null, switchBy = null, onChange = null, validate = null }) {
   return new Promise((resolve) => {
     const d = document.createElement('dialog');
     d.className = 'dlg';
@@ -178,6 +180,8 @@ export function formDialog({ title, fields, submit = '儲存', danger = null, sw
         else if (f.type === 'toggle') out[f.name] = d.querySelector(`[name="${f.name}"]`).checked;
         else { const val = d.querySelector(`[name="${f.name}"]`).value.trim(); out[f.name] = f.type === 'number' ? (val === '' ? null : Number(val)) : val; }
       }
+      const bad = validate?.(out);
+      if (bad) { toast(bad, 'bad'); return; }
       close(out);
     });
     const sync = () => {

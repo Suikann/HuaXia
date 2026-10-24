@@ -88,3 +88,8 @@
 - 分部課可以好幾組一起上：`events.sections text[]`（`section` 由觸發器自動等於第一組），`is_expected` 改成任一組都算應出席；新增行程的「分部課組別」改成可複選。**有改資料庫：推上 GitHub 前要先在 Supabase 重新執行一次 `supabase/schema.sql`。** 尚未處理：Google 行事曆同步與 DC 通知只送到第一組的行事曆／頻道。`npm test` 50/50。
 - 行程頁「我的狀態」與首頁多了「出席」按鈕，可事先確認會到（存在 leave_requests，type = 'attend'，點名時預設帶「出席」；幹部點名表顯示「已確認出席 N 人」與每人的「已確認」）。**有改資料庫：要重新執行 `supabase/schema.sql`。** `npm test` 51/51。
 - 2026-10-24 修正：各組分頁、出席明細的組別篩選在正式網站點不動（資料還沒載完就先綁按鈕）。示範模式網址加 `&slow`（例：`?demo&slow`）會讓每次讀資料慢 300ms，用來測這類問題。
+
+## 2026-10-24 移除示範模式
+- 刪除 `js/mock.js`、`js/mock-rehearsal.js`；網址加 `?demo` 不再有作用，設定畫面的「先看示範模式」按鈕拿掉。
+- `core.js` 的 `DEMO` 只在 `window.HUAXIA_DEMO === true` 時成立（給另外準備的離線測試版用，正式網站不會設定）。
+- README、SETUP、MAINTENANCE、STATUS 已更新。
