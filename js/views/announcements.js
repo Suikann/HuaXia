@@ -65,8 +65,9 @@ export const catLabel = (a) => CATS[catOf(a)]?.label || '公告';
 // 不算「公告」的分享類（首頁最新公告、未讀紅點不算它們）
 export const SHARE_CATS = Object.keys(CATS).filter((k) => CATS[k].open);
 
-const AUDIENCE = { all: '全體（含槍手）', insiders: '全體社員', sizhu: '絲竹', section: '某一組', officers: '幹部', newbies: '新生', ringers: '槍手' };
-const DEFAULT_AUD = { performance: 'all', tutti: 'all', sizhu: 'sizhu', class: 'newbies', alumni: 'insiders' };
+// 「絲竹」對象（@全體絲竹成員）已拿掉；舊公告的 sizhu 當成全體社員
+const AUDIENCE = { all: '全體（含槍手）', insiders: '全體社員', section: '某一組', officers: '幹部', newbies: '新生', ringers: '槍手' };
+const DEFAULT_AUD = { performance: 'all', tutti: 'all', sizhu: 'insiders', class: 'newbies', alumni: 'insiders' };
 
 export async function sizhuRoster() {
   const { data } = await sb.from('ensemble_members').select('user_id').eq('ensemble', 'sizhu');
@@ -91,8 +92,7 @@ async function editAnn(a = null, preset = '') {
     { name: 'cat', label: '類型', type: 'select', value: cat0, options: cats.map((k) => [k, CATS[k].label]) },
   ];
   if (officer) fields.push(
-    { name: 'audience', label: '對象', type: 'select', value: a?.audience || DEFAULT_AUD[cat0] || 'insiders', options: Object.entries(AUDIENCE), only: officerOnly,
-      hint: '選「絲竹」時大家都看得到，並會提醒全體絲竹成員' },
+    { name: 'audience', label: '對象', type: 'select', value: (a?.audience === 'sizhu' ? 'insiders' : a?.audience) || DEFAULT_AUD[cat0] || 'insiders', options: Object.entries(AUDIENCE), only: officerOnly },
     { name: 'section', label: '組別', type: 'select', value: a?.section || '', options: [['', '（對象選「某一組」時才需要）'], ...SECTIONS.map((s) => [s, s])], only: officerOnly },
   );
   fields.push(
@@ -126,7 +126,7 @@ async function editAnn(a = null, preset = '') {
   const row = {
     channel: v.cat, type: 'other', title: v.title, body: v.body, pinned: officer ? v.pinned : false,
     audience: aud, section: aud === 'section' ? v.section : null,
-    mention_all: aud === 'sizhu', mentions: officer && !open ? v.mentions : [],
+    mention_all: false, mentions: officer && !open ? v.mentions : [],
     link: ['concerts', 'resources'].includes(v.cat) ? v.link : '',
     venue: v.cat === 'concerts' ? v.venue : '', event_at: v.cat === 'concerts' ? twToIso(v.date, v.time || '00:00') : null,
   };
@@ -156,8 +156,8 @@ function postItem(a, read) {
         ${photosHtml(a)}
         <div class="meta">${a.author ? `<span class="small muted">分享者</span>${chipPerson(a.author)}` : ''}</div></div></article>`;
   }
-  const tagged = (a.mentions || []).includes(me()) || (a.mention_all && ROSTER.includes(me()));
-  const audChip = a.audience && !['insiders'].includes(a.audience) && !CATS[cat]?.open
+  const tagged = (a.mentions || []).includes(me());
+  const audChip = a.audience && !['insiders', 'sizhu'].includes(a.audience) && !CATS[cat]?.open
     ? `<span class="chip">${a.audience === 'section' ? esc(a.section) + '組' : AUDIENCE[a.audience]}</span>` : '';
   return `<article class="ann c-${cat} ${read.has(a.id) ? '' : 'unread'} ${tagged ? 'tagged' : ''}">
     <div class="ann-head"><span class="atype c-${cat}">${catLabel(a)}</span>${a.pinned ? '<span class="chip gold">置頂</span>' : ''}${audChip}${edit}</div>
@@ -170,8 +170,8 @@ function postItem(a, read) {
 
 export function mentionLine(a) {
   const ids = a.mentions || [];
-  if (!a.mention_all && !ids.length) return '';
-  return `<p class="mentions">${a.mention_all ? '<span class="at">@全體絲竹成員</span>' : ''}${ids.map((id) => `<span class="at ${id === me() ? 'me' : ''}">@${esc(nameOf(id))}</span>`).join('')}</p>`;
+  if (!ids.length) return '';
+  return `<p class="mentions">${ids.map((id) => `<span class="at ${id === me() ? 'me' : ''}">@${esc(nameOf(id))}</span>`).join('')}</p>`;
 }
 
 // 教學班與學員（目前學期）
@@ -194,6 +194,8 @@ async function annPage() {
   const read = new Set((reads || []).map((r) => r.ann_id));
   let list = (data || []).filter((a) => !f || catOf(a) === f);
   const unread = list.filter((a) => !read.has(a.id));
+  // 各分類有沒有還沒看過的（現在這個分類看了就算已讀，所以不標）
+  const dots = new Set((data || []).filter((a) => !read.has(a.id) && catOf(a) !== f).map(catOf));
   if (unread.length) sb.from('announcement_reads').upsert(unread.map((a) => ({ ann_id: a.id, user_id: me() }))).then(() => document.dispatchEvent(new Event('unread-changed')));
   setTimeout(() => {
     $('#add-ann')?.addEventListener('click', () => editAnn(null, f));
@@ -208,7 +210,7 @@ async function annPage() {
   const addLabel = state.p.officer ? '發布' : '分享音樂會或資源';
   const head = pageHead('公告', f === 'concerts' ? '看到不錯的音樂會、講座或比賽，分享給大家。' : f === 'resources' ? '好用的樂譜、影片、教學連結，大家都能分享。' : '',
     canAdd ? `<button class="btn pri" id="add-ann">＋ ${addLabel}</button>` : '');
-  const seg = annSeg(f);
+  const seg = annSeg(f, dots);
   const listHtml = (l) => `<div class="ann-list">${l.map((a) => postItem(a, read)).join('')}</div>`;
 
   if (f === 'concerts') {
@@ -244,8 +246,8 @@ async function editRoster() {
 }
 
 // 分類列
-function annSeg(f) {
-  return `<div class="seg wrap"><button data-af="" aria-pressed="${!f}">全部</button>${Object.entries(CATS).map(([k, c]) => `<button data-af="${k}" aria-pressed="${f === k}">${c.label}</button>`).join('')}</div>`;
+function annSeg(f, dots = new Set()) {
+  return `<div class="seg wrap"><button data-af="" aria-pressed="${!f}">全部</button>${Object.entries(CATS).map(([k, c]) => `<button data-af="${k}" aria-pressed="${f === k}" class="${dots.has(k) ? 'has-new' : ''}">${c.label}${dots.has(k) ? '<i class="new-dot" aria-label="有新公告"></i>' : ''}</button>`).join('')}</div>`;
 }
 
 route('/announcements', annPage);

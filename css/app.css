@@ -608,3 +608,20 @@ input.pick { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); 
 /* iPhone 的日期、時間欄位會比其他欄位寬、文字置中：統一成一般輸入框 */
 input[type="date"], input[type="time"] { -webkit-appearance: none; appearance: none; min-width: 0; max-width: 100%; display: block; min-height: 44px; text-align: left; }
 input[type="date"]::-webkit-date-and-time-value, input[type="time"]::-webkit-date-and-time-value { text-align: left; }
+
+/* 各組：我的組別（同時在好幾組） */
+.grp-tabs button.mine-tab { --c: var(--accent); --p: var(--fill); }
+.grp-tabs button.is-mine::after { content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: currentColor; margin-left: 6px; vertical-align: 2px; opacity: .7; }
+.grp-mine { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin-bottom: 18px; }
+.grp-mine .grp-hero { margin: 0; text-align: left; color: inherit; font: inherit; cursor: pointer; width: 100%; transition: border-color .15s, transform .15s; }
+.grp-mine .grp-hero:hover { border-color: var(--c); transform: translateY(-1px); }
+.grp-mine .grp-hero h2 { font-size: clamp(24px, 4vw, 30px); }
+.grp-mine .go { color: var(--c); display: inline-block; margin-top: 6px; }
+
+/* 公告分類：有新公告的紅點 */
+.seg button { position: relative; }
+.new-dot { position: absolute; top: 4px; right: 4px; width: 8px; height: 8px; border-radius: 50%; background: #e5484d; box-shadow: 0 0 0 2px var(--bg); }
+/* 音樂會：右上角的分類與編輯不再疊在標題上 */
+.ann.concert .ann-head { position: static; margin-bottom: 2px; }
+.ann.concert .ann-head:empty { display: none; }
+.ann.concert h3 { padding-right: 0; }

@@ -63,7 +63,8 @@ route('/', async () => {
       <div class="next-m">${p.officer ? '<a class="btn line" href="#/events">新增行程</a>' : '<span>幹部排好練習後會顯示在這裡。</span>'}</div></div></section>`;
   }
 
-  const newTags = (tags.data || []).filter((a) => !read.has(a.id)).slice(0, 3);
+  // 只算被點名標記的（「@全體絲竹成員」已拿掉）
+  const newTags = (tags.data || []).filter((a) => !read.has(a.id) && (a.mentions || []).includes(me())).slice(0, 3);
   const tagBox = newTags.length ? `<section class="tag-box"><b>有人提到你</b>${newTags.map((a) => `<a href="#/announcements"><span class="k">${catLabel(a)}</span>${esc(a.title)}<span class="muted small">${fmtDate(a.created_at)}</span></a>`).join('')}</section>` : '';
   return hero + tagBox + (p.admin && pending.data?.length ? `<a class="banner" href="#/members"><b>${pending.data.length} 人等待核准加入</b><span>前往審核 →</span></a>` : '') +
     (p.admin && !state.semester ? `<a class="banner" href="#/settings"><b>還沒有設定目前學期</b><span>先建立學期，才能新增行程 →</span></a>` : '') +
