@@ -8,7 +8,7 @@ import { classesTab } from './teaching.js';
 const TEACH = '教學班';
 const pct = (r) => r == null ? '<span class="muted">—</span>' : `<span class="rate rate-${rateLevel(r)} mono">${Math.round(r)}%</span>`;
 
-// 看得到哪些組：幹部看全部；其他人只看自己所屬的組
+// 點得進哪些組：幹部全部；其他人只有自己所屬的組（其他組的分頁看得到但不能點）
 const visibleSecs = () => (state.p.officer ? SECTIONS : SECTIONS.filter((s) => mySecs().includes(s)));
 
 function pickTab() {
@@ -60,9 +60,10 @@ route('/groups', async () => {
   const tab = pickTab();
   setTimeout(() => $$('[data-grp]').forEach((b) => (b.onclick = () => { sessionStorage.setItem('grp', b.dataset.grp); render(); })));
   const secs = visibleSecs();
-  const tabs = [...secs, TEACH];
+  const tabs = [...SECTIONS, TEACH];
   return pageHead('各組', '各聲部的成員、分部課、組內公告與出席，以及新生教學班。') +
-    `<div class="grp-tabs" role="tablist">${tabs.map((t) => `<button role="tab" data-grp="${t}" aria-selected="${t === tab}" class="${t === TEACH ? 'teach' : `sec-${t}`} ${state.p.officer && mySecs().includes(t) ? 'is-mine' : ''}">${t}</button>`).join('')}</div>` +
+    `<div class="grp-tabs" role="tablist">${tabs.map((t) => { const ok = t === TEACH || secs.includes(t);
+      return `<button role="tab" ${ok ? `data-grp="${t}"` : 'disabled title="只有這組的組員可以點進去"'} aria-selected="${t === tab}" class="${t === TEACH ? 'teach' : `sec-${t}`} ${ok ? '' : 'locked'} ${state.p.officer && mySecs().includes(t) ? 'is-mine' : ''}">${t}</button>`; }).join('')}</div>` +
     (!secs.length ? `<p class="small muted grp-note">你還沒有分組，幹部幫你設定組別後，這裡就會出現你的組。</p>` : '') +
     (tab === TEACH ? `<p class="small muted grp-note">新生教學班與進度，帶課的人在這裡勾選學員的進度。</p>${await classesTab()}` : await sectionView(tab));
 });
