@@ -948,6 +948,18 @@ create policy scores_read on storage.objects for select using (
 create policy scores_write on storage.objects for insert with check (bucket_id = 'scores' and public.is_officer());
 create policy scores_delete on storage.objects for delete using (bucket_id = 'scores' and public.is_officer());
 
+-- 頭像：公開讀取（只是大頭貼）；只能上傳、取代、刪除自己資料夾（<user id>/…）裡的檔案
+insert into storage.buckets (id, name, public) values ('avatars', 'avatars', true) on conflict (id) do nothing;
+drop policy if exists avatars_write on storage.objects;
+drop policy if exists avatars_update on storage.objects;
+drop policy if exists avatars_delete on storage.objects;
+create policy avatars_write on storage.objects for insert with check (
+  bucket_id = 'avatars' and auth.uid() is not null and split_part(name, '/', 1) = auth.uid()::text);
+create policy avatars_update on storage.objects for update using (
+  bucket_id = 'avatars' and split_part(name, '/', 1) = auth.uid()::text);
+create policy avatars_delete on storage.objects for delete using (
+  bucket_id = 'avatars' and split_part(name, '/', 1) = auth.uid()::text);
+
 -- 公告照片：不公開；看得到那則公告的人才看得到照片。上傳只能放進自己的資料夾，刪除限本人或幹部
 insert into storage.buckets (id, name, public) values ('photos', 'photos', false) on conflict (id) do nothing;
 drop policy if exists photos_read on storage.objects;

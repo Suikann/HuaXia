@@ -387,6 +387,17 @@ test('點名：各組組長可以幫全團點名，看得到全團名單與請�
   assert.ok((await as(Mb, `insert into attendance (event_id,user_id,status) values ('${EV}','${Ld}','present')`)).error);  // 社員不能點名
 });
 
+test('頭像：只能上傳到自己的資料夾，不能刪別人的', async () => {
+  await db.exec('alter table storage.objects enable row level security');
+  try {
+    assert.equal((await as(B, `insert into storage.objects (bucket_id,name) values ('avatars','${B}/a.jpg')`)).error, undefined);
+    assert.ok((await as(B, `insert into storage.objects (bucket_id,name) values ('avatars','${A}/a.jpg')`)).error);
+    await db.exec(`insert into storage.objects (bucket_id,name) values ('avatars','${A}/mine.jpg')`);
+    await as(B, `delete from storage.objects where bucket_id='avatars' and name='${A}/mine.jpg'`);
+    assert.equal((await db.exec(`select 1 from storage.objects where name='${A}/mine.jpg'`))[0].rows.length, 1);
+  } finally { await db.exec('alter table storage.objects disable row level security'); }
+});
+
 const upload = (...paths) => db.exec(`insert into storage.objects (bucket_id, name) values ${paths.map((p) => `('scores','${p}')`).join(',')}`);
 
 test('泠靈發譜：版本查詢；登入的人才能呼叫，版本不符時整個不做', async () => {
