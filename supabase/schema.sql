@@ -710,10 +710,40 @@ drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created after insert on auth.users
   for each row execute function public.handle_new_user();
 
+-- 永久管理員：名單只能在 Supabase 的 SQL Editor 設定（網站上任何人，包括其他管理員，都不能改名單）。
+-- 名單上的人：網站上不能拿掉他的管理員身分，也不能停用他的帳號；要解除只能在 SQL Editor 刪掉名單那一列。
+create table if not exists public.protected_admins (
+  user_id uuid primary key references public.profiles(id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+alter table public.protected_admins enable row level security;
+drop policy if exists protected_admins_read on public.protected_admins;
+create policy protected_admins_read on public.protected_admins for select using (public.is_active());
+create or replace function public.is_protected_admin(uid uuid) returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from protected_admins where user_id = uid)
+$$;
+create or replace function public.guard_protected_admin() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  -- auth.uid() 是空的 = 在 SQL Editor 直接操作，允許
+  if auth.uid() is not null and old.role = 'admin' and public.is_protected_admin(old.user_id)
+     and (tg_op = 'DELETE' or new.role is distinct from 'admin' or new.user_id is distinct from old.user_id) then
+    raise exception '這位是永久管理員，不能移除管理員身分';
+  end if;
+  return case when tg_op = 'DELETE' then old else new end;
+end $$;
+drop trigger if exists guard_protected_admin on public.user_roles;
+create trigger guard_protected_admin before update or delete on public.user_roles
+  for each row execute function public.guard_protected_admin();
+
 -- 個人資料：本人只能改基本欄位；狀態與職位只有管理員能改；組別與樂器幹部也能改
 create or replace function public.guard_profile() returns trigger
 language plpgsql security definer set search_path = public as $$
 begin
+  if auth.uid() is not null and new.status is distinct from old.status and public.is_protected_admin(old.id) then
+    raise exception '這位是永久管理員，不能停用帳號';
+  end if;
   if auth.uid() is null or public.is_admin() then return new; end if;
   if new.status is distinct from old.status or new.officer_title is distinct from old.officer_title then
     raise exception '只有管理員能變更帳號狀態或職位';

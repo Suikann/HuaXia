@@ -356,6 +356,22 @@ test('一個人可以同時在好幾組：分部課、組內公告、組長排�
   assert.deepEqual((await as(A, `select sections from profiles where id='${C}'`)).rows[0].sections, ['低音']);
 });
 
+test('永久管理員：網站上不能拿掉管理員身分、不能停用；名單也不能從網站改；SQL Editor 可以解除', async () => {
+  const P = '00000000-0000-0000-0000-00000000000e';
+  await db.exec(`insert into auth.users values ('${P}','p@x','{"name":"永久"}')`);
+  await as(A, `update profiles set status='active' where id='${P}'; insert into user_roles values ('${P}','member'),('${P}','admin')`);
+  assert.ok((await as(A, `insert into protected_admins (user_id) values ('${P}')`)).error);          // 網站上不能加名單
+  await db.exec(`insert into protected_admins (user_id) values ('${P}')`);                           // SQL Editor 加
+  assert.match((await as(A, `delete from user_roles where user_id='${P}' and role='admin'`)).error, /永久管理員/);
+  assert.match((await as(A, `update user_roles set role='member' where user_id='${P}' and role='admin'`)).error || '', /永久管理員|duplicate/);
+  assert.match((await as(A, `update profiles set status='inactive' where id='${P}'`)).error, /永久管理員/);
+  assert.equal((await as(A, `update profiles set officer_title='社長' where id='${P}'`)).error, undefined);  // 其他欄位照常能改
+  assert.ok((await as(P, `delete from protected_admins where user_id='${P}'`)).rows?.length !== 1);  // 自己也不能從網站移出名單
+  assert.equal((await as(A, `select 1 from user_roles where user_id='${P}' and role='admin'`)).rows.length, 1);
+  await db.exec(`delete from protected_admins where user_id='${P}'`);                                // SQL Editor 解除
+  assert.equal((await as(A, `delete from user_roles where user_id='${P}' and role='admin'`)).error, undefined);
+});
+
 const upload = (...paths) => db.exec(`insert into storage.objects (bucket_id, name) values ${paths.map((p) => `('scores','${p}')`).join(',')}`);
 
 test('泠靈發譜：版本查詢；登入的人才能呼叫，版本不符時整個不做', async () => {
