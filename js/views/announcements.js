@@ -65,9 +65,9 @@ export const catLabel = (a) => CATS[catOf(a)]?.label || '公告';
 // 不算「公告」的分享類（首頁最新公告、未讀紅點不算它們）
 export const SHARE_CATS = Object.keys(CATS).filter((k) => CATS[k].open);
 
-// 「絲竹」對象（@全體絲竹成員）已拿掉；舊公告的 sizhu 當成全體社員
-const AUDIENCE = { all: '全體（含槍手）', insiders: '全體社員', section: '某一組', officers: '幹部', newbies: '新生', ringers: '槍手' };
-const DEFAULT_AUD = { performance: 'all', tutti: 'all', sizhu: 'insiders', class: 'newbies', alumni: 'insiders' };
+// 對象「絲竹」保留，但不再 @全體絲竹成員（mention_all 一律 false）
+const AUDIENCE = { all: '全體（含槍手）', insiders: '全體社員', sizhu: '絲竹', section: '某一組', officers: '幹部', newbies: '新生', ringers: '槍手' };
+const DEFAULT_AUD = { performance: 'all', tutti: 'all', sizhu: 'sizhu', class: 'newbies', alumni: 'insiders' };
 
 export async function sizhuRoster() {
   const { data } = await sb.from('ensemble_members').select('user_id').eq('ensemble', 'sizhu');
@@ -92,7 +92,7 @@ async function editAnn(a = null, preset = '') {
     { name: 'cat', label: '類型', type: 'select', value: cat0, options: cats.map((k) => [k, CATS[k].label]) },
   ];
   if (officer) fields.push(
-    { name: 'audience', label: '對象', type: 'select', value: (a?.audience === 'sizhu' ? 'insiders' : a?.audience) || DEFAULT_AUD[cat0] || 'insiders', options: Object.entries(AUDIENCE), only: officerOnly },
+    { name: 'audience', label: '對象', type: 'select', value: a?.audience || DEFAULT_AUD[cat0] || 'insiders', options: Object.entries(AUDIENCE), only: officerOnly },
     { name: 'section', label: '組別', type: 'select', value: a?.section || '', options: [['', '（對象選「某一組」時才需要）'], ...SECTIONS.map((s) => [s, s])], only: officerOnly },
   );
   fields.push(
@@ -157,7 +157,7 @@ function postItem(a, read) {
         <div class="meta">${a.author ? `<span class="small muted">分享者</span>${chipPerson(a.author)}` : ''}</div></div></article>`;
   }
   const tagged = (a.mentions || []).includes(me());
-  const audChip = a.audience && !['insiders', 'sizhu'].includes(a.audience) && !CATS[cat]?.open
+  const audChip = a.audience && !['insiders'].includes(a.audience) && !CATS[cat]?.open
     ? `<span class="chip">${a.audience === 'section' ? esc(a.section) + '組' : AUDIENCE[a.audience]}</span>` : '';
   return `<article class="ann c-${cat} ${read.has(a.id) ? '' : 'unread'} ${tagged ? 'tagged' : ''}">
     <div class="ann-head"><span class="atype c-${cat}">${catLabel(a)}</span>${a.pinned ? '<span class="chip gold">置頂</span>' : ''}${audChip}${edit}</div>
