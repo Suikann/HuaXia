@@ -6,6 +6,7 @@ import { invokeFn } from './events.js';
 async function editMember(u, priv) {
   const p = state.p;
   const fields = [
+    { type: 'info', empty: '他還沒填「我的資料」', rows: [['系級', u.grade], ['學校', u.school], ['手機', priv?.phone], ['Email', priv?.email], ['Google 帳號', priv?.google_email], ['自我介紹', u.bio]] },
     { name: 'display_name', label: '顯示名稱', value: u.display_name },
     { name: 'real_name', label: '本名', value: u.real_name },
     { name: 'sections', label: '組別（可複選）', type: 'checks', full: true, value: secsOf(u), options: SECTIONS.map((s) => [s, s]), hint: '同時在兩組就都勾，例如彈撥＋打擊' },
@@ -16,7 +17,7 @@ async function editMember(u, priv) {
     { name: 'officer_title', label: '幹部職位', value: u.officer_title, placeholder: '例：副社、總務、公關、器材、文書、教學' },
     { name: 'status', label: '帳號狀態', type: 'select', value: u.status, options: [['active', '啟用'], ['pending', '待核准'], ['inactive', '停用（已離團或畢業）']] },
   );
-  const v = await formDialog({ title: `${nameOf(u.id)}${priv?.email ? `・${priv.email}` : ''}`, fields });
+  const v = await formDialog({ title: nameOf(u.id), fields });
   if (!v) return;
   const sections = SECTIONS.filter((s) => v.sections.includes(s));
   const row = { display_name: v.display_name, real_name: v.real_name, sections, section: sections[0] || null, instruments: v.instruments };
@@ -91,6 +92,7 @@ route('/members', async () => {
     $$('[data-mf]').forEach((b) => (b.onclick = () => { sessionStorage.setItem('mf', b.dataset.mf); render(); }));
     $('#mi')?.addEventListener('click', () => { sessionStorage.setItem('mi', showInactive ? '0' : '1'); render(); });
     $$('[data-approve]').forEach((b) => (b.onclick = () => approve(people.find((u) => u.id === b.dataset.approve), b.dataset.roles.split(','))));
+    $$('[data-info]').forEach((b) => (b.onclick = () => { const u = people.find((x) => x.id === b.dataset.info); editMember(u, privOf(u.id)); }));
     $$('[data-reject]').forEach((b) => (b.onclick = async () => {
       if (!b.dataset.armed) { b.dataset.armed = 1; b.textContent = '確定拒絕？'; return; }
       await run(() => sb.from('profiles').update({ status: 'inactive' }).eq('id', b.dataset.reject), '已拒絕'); await loadShared(); render();
@@ -103,12 +105,12 @@ route('/members', async () => {
     if (batch) $$('[data-member]').forEach((tr) => (tr.onclick = () => { const c = tr.querySelector('[data-pick]'); c.checked = !c.checked; c.onchange(); }));
     else if (p.officer) $$('[data-member]').forEach((tr) => (tr.onclick = () => { const u = people.find((x) => x.id === tr.dataset.member); editMember(u, privOf(u.id)); }));
   });
-  return pageHead('成員', `${list.length} 人${p.officer ? '・點一列可以編輯組別、樂器' + (p.admin ? '與身分組' : '') : ''}`,
+  return pageHead('成員', `${list.length} 人${p.officer ? '・點一列可以看手機、自我介紹，並編輯組別、樂器' + (p.admin ? '與身分組' : '') : ''}`,
     p.admin ? `<button class="btn ${batch ? 'pri' : 'line'} sm" id="mb">${batch ? '結束批次' : '批次設定身分'}</button><button class="btn ghost sm" id="mi">${showInactive ? '隱藏停用帳號' : '顯示停用帳號'}</button>` : '') +
     (batch ? `<div class="batch-bar"><span>已選 <b id="sel-n" class="mono">${sel.size}</b> 人</span><button class="btn sm ghost" id="sel-all">全選／取消</button><button class="btn sm pri" id="sel-apply">設定身分組</button></div>` : '') +
     (p.admin && pending.length ? `<section class="card pending"><h2>等待核准 <span class="dot-n">${pending.length}</span></h2>
-      ${pending.map((u) => `<div class="pend-row"><div class="who">${box(u.id)}${avatar(u.id, 32)}<div><b>${esc(nameOf(u.id))}</b><span class="small muted">${esc(privOf(u.id)?.email || '')}</span></div></div>
-        <div class="actions"><button class="btn sm pri" data-approve="${u.id}" data-roles="member">核准為社員</button><button class="btn sm" data-approve="${u.id}" data-roles="member,newbie">新生</button><button class="btn sm" data-approve="${u.id}" data-roles="ringer">槍手</button><button class="btn sm" data-approve="${u.id}" data-roles="alumni">校友</button><button class="btn sm" data-approve="${u.id}" data-roles="teacher">指導老師</button><button class="btn sm ghost danger" data-reject="${u.id}">拒絕</button></div></div>`).join('')}
+      ${pending.map((u) => `<div class="pend-row"><div class="who">${box(u.id)}${avatar(u.id, 32)}<div><b>${esc(nameOf(u.id))}</b><span class="small muted">${esc([u.grade, privOf(u.id)?.email].filter(Boolean).join('・'))}</span></div></div>
+        <div class="actions"><button class="btn sm ghost" data-info="${u.id}">看資料</button><button class="btn sm pri" data-approve="${u.id}" data-roles="member">核准為社員</button><button class="btn sm" data-approve="${u.id}" data-roles="member,newbie">新生</button><button class="btn sm" data-approve="${u.id}" data-roles="ringer">槍手</button><button class="btn sm" data-approve="${u.id}" data-roles="alumni">校友</button><button class="btn sm" data-approve="${u.id}" data-roles="teacher">指導老師</button><button class="btn sm ghost danger" data-reject="${u.id}">拒絕</button></div></div>`).join('')}
     </section>` : '') +
     `<div class="seg wrap"><button data-mf="" aria-pressed="${!f}">全部</button>${SECTIONS.map((s) => `<button data-mf="${s}" aria-pressed="${f === s}">${s}</button>`).join('')}<button data-mf="officer" aria-pressed="${f === 'officer'}">幹部</button><button data-mf="ringer" aria-pressed="${f === 'ringer'}">槍手</button><button data-mf="alumni" aria-pressed="${f === 'alumni'}">校友</button></div>` +
     (list.length ? `<div class="tbl-wrap"><table class="${p.officer || batch ? 'click' : ''}"><thead><tr><th>成員</th><th>組別</th><th>樂器</th><th>身分</th>${p.officer ? '<th>Email</th>' : ''}</tr></thead><tbody>
