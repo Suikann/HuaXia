@@ -8,7 +8,7 @@ async function editMember(u, priv) {
   const fields = [
     { name: 'display_name', label: '顯示名稱', value: u.display_name },
     { name: 'real_name', label: '本名', value: u.real_name },
-    { name: 'sections', label: '組別（可複選）', type: 'checks', full: true, value: secsOf(u), options: SECTIONS.map((s) => [s, s]), hint: '同時在兩組就都勾，例如彈撥＋打擊。第一個勾的算主要組別' },
+    { name: 'sections', label: '組別（可複選）', type: 'checks', full: true, value: secsOf(u), options: SECTIONS.map((s) => [s, s]), hint: '同時在兩組就都勾，例如彈撥＋打擊' },
     { name: 'instruments', label: '樂器', value: u.instruments, placeholder: '例：二胡／中胡' },
   ];
   if (p.admin) fields.push(
