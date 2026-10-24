@@ -65,7 +65,7 @@ route('/groups', async () => {
   setTimeout(() => $$('[data-grp]').forEach((b) => (b.onclick = () => { sessionStorage.setItem('grp', b.dataset.grp); render(); })));
   return pageHead('各組', '各聲部的成員、分部課、組內公告與出席，以及新生教學班。') +
     `<div class="grp-tabs" role="tablist">${tabs.map((t) => { const ok = t === TEACH || secs.includes(t);
-      return `<button role="tab" ${ok ? `data-grp="${t}"` : 'disabled title="只有這組的組員可以點進去"'} aria-selected="${t === tab}" class="${t === TEACH ? 'teach' : `sec-${t}`} ${ok ? '' : 'locked'} ${mySecs().includes(t) ? 'is-mine' : ''}">${t}</button>`; }).join('')}</div>` +
+      return `<button role="tab" ${ok ? `data-grp="${t}"` : 'disabled title="只有這組的組員可以點進去"'} aria-selected="${t === tab}" class="${t === TEACH ? 'teach' : `sec-${t}`} ${ok ? '' : 'locked'} ${state.p.officer && mySecs().includes(t) ? 'is-mine' : ''}">${t}</button>`; }).join('')}</div>` +
     (!secs.length ? `<p class="small muted grp-note">你還沒有分組，幹部幫你設定組別後，這裡就會出現你的組。</p>` : '') +
     body;
 });
