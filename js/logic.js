@@ -61,6 +61,27 @@ export function partShortage(part, assignedCount) {
   return Math.max(0, (part.needed_min ?? 1) - assignedCount);
 }
 
+// ---------- 分部：聲部（parent_id 為空）底下可以有分部（parent_id 指向聲部），只分兩層 ----------
+// 排人的那個人：社員看 user_id，還沒註冊的槍手看 ringer_id
+const personKey = (a) => (a.user_id ? 'u:' + a.user_id : 'r:' + a.ringer_id);
+export const divisiOf = (partId, parts) => parts.filter((x) => x.parent_id === partId);
+// 排在這個聲部（含它所有分部）的不同人數
+function peopleIn(part, parts, asg) {
+  const ids = new Set([part.id, ...divisiOf(part.id, parts).map((x) => x.id)]);
+  return new Set(asg.filter((a) => ids.has(a.part_id)).map(personKey)).size;
+}
+// 缺幾人：分部與沒分部的聲部看自己排到的人；有分部的聲部看所有分部排到幾個不同的人（一人排在好幾個分部只算一人）
+export function shortageOf(part, parts, asg) {
+  return partShortage(part, peopleIn(part, parts, asg));
+}
+// 整首曲目缺幾人（曲目卡片用）：每個聲部取聲部缺的人與分部缺的位置加總較多的一邊，兩層不重複算
+export function pieceShortage(parts, asg) {
+  return parts.filter((x) => !x.parent_id).reduce((n, pt) => {
+    const kids = divisiOf(pt.id, parts).reduce((m, d) => m + shortageOf(d, parts, asg), 0);
+    return n + Math.max(shortageOf(pt, parts, asg), kids);
+  }, 0);
+}
+
 // 出席率顯示等級
 export function rateLevel(rate) {
   if (rate == null) return 'none';

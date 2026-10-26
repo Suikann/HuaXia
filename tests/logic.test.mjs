@@ -47,6 +47,40 @@ test('編制缺額不會變成負數', () => {
   assert.equal(partShortage({ needed_min: 1 }, 3), 0);
 });
 
+test('分部的缺人看自己的人數；有分部的聲部看所有分部排到幾個不同的人', async () => {
+  const { shortageOf } = await import('../js/logic.js');
+  // 擊樂2 要 2 人，底下風鈴、鈴鼓、沙球各要 1 人；阿甲一人負責風鈴與鈴鼓
+  const parts = [
+    { id: 'p', name: '擊樂2', needed_min: 2 },
+    { id: 'd1', name: '風鈴', needed_min: 1, parent_id: 'p' },
+    { id: 'd2', name: '鈴鼓', needed_min: 1, parent_id: 'p' },
+    { id: 'd3', name: '沙球', needed_min: 1, parent_id: 'p' },
+    { id: 'q', name: '高胡', needed_min: 2 },
+  ];
+  const asg = [{ part_id: 'd1', user_id: 'a' }, { part_id: 'd2', user_id: 'a' }, { part_id: 'q', user_id: 'b' }];
+  assert.equal(shortageOf(parts[0], parts, asg), 1);   // 只有阿甲一人，不是兩人
+  assert.equal(shortageOf(parts[1], parts, asg), 0);
+  assert.equal(shortageOf(parts[3], parts, asg), 1);
+  assert.equal(shortageOf(parts[4], parts, asg), 1);   // 沒分部的聲部照舊
+  // 槍手排在兩個分部也只算一人
+  const asg2 = [{ part_id: 'd1', ringer_id: 'r' }, { part_id: 'd3', ringer_id: 'r' }];
+  assert.equal(shortageOf(parts[0], parts, asg2), 1);
+  assert.equal(shortageOf(parts[0], parts, [...asg2, { part_id: 'd2', user_id: 'b' }]), 0);
+});
+
+test('曲目缺人：每個聲部取「聲部缺的人」與「分部缺的位置加總」較多的一邊，不重複算', async () => {
+  const { pieceShortage } = await import('../js/logic.js');
+  // 二胡要 8 人，I、II 各要 4 人：I 排 4 人、II 排 0 人 → 缺 4（不是聲部 4 加分部 4）
+  const erhu = [{ id: 'e', needed_min: 8 }, { id: 'e1', needed_min: 4, parent_id: 'e' }, { id: 'e2', needed_min: 4, parent_id: 'e' }];
+  const four = ['a', 'b', 'c', 'd'].map((u) => ({ part_id: 'e1', user_id: u }));
+  assert.equal(pieceShortage(erhu, four), 4);
+  // 擊樂要 2 人、三件樂器各要 1 人：2 人排滿聲部，但沙球沒人 → 缺 1
+  const perc = [{ id: 'p', needed_min: 2 }, { id: 'p1', needed_min: 1, parent_id: 'p' }, { id: 'p2', needed_min: 1, parent_id: 'p' }, { id: 'p3', needed_min: 1, parent_id: 'p' }];
+  assert.equal(pieceShortage(perc, [{ part_id: 'p1', user_id: 'a' }, { part_id: 'p2', user_id: 'b' }]), 1);
+  // 沒分部的聲部照舊相加（擊樂沒排人時，三件樂器缺 3 多於聲部缺 2）
+  assert.equal(pieceShortage([...erhu, ...perc, { id: 'q', needed_min: 2 }], four), 4 + 3 + 2);
+});
+
 test('出席率分級', () => {
   assert.equal(rateLevel(null), 'none');
   assert.equal(rateLevel(80), 'ok');
