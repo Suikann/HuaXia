@@ -227,6 +227,21 @@ test('座位表：依編制自動排位，拉弦在左、彈撥在右、打擊�
   assert.deepEqual(r.missing, [{ k: 'u:new', part: 'a' }]);
 });
 
+test('座位表：排在分部的人照分部的組別（等於所屬聲部的）排位置，名稱猜不出組別也一樣', async () => {
+  const { autoSeat } = await import('../js/logic.js');
+  const parts = [
+    { id: 'e', name: '二胡', section: '拉弦', sort: 1 }, { id: 'e1', name: 'I', section: '拉弦', parent_id: 'e', sort: 2 },
+    { id: 'p', name: '擊樂2', section: '打擊', sort: 3 }, { id: 'p1', name: '雨柱', section: '打擊', parent_id: 'p', sort: 4 },
+    { id: 'y', name: '揚琴', section: '彈撥', sort: 5 },
+  ];
+  const asg = [{ part_id: 'e1', user_id: 'a' }, { part_id: 'e1', user_id: 'b' }, { part_id: 'p1', user_id: 'c' }, { part_id: 'y', user_id: 'd' }];
+  const s = autoSeat(parts, asg, { w: 12, d: 8 });
+  const at = (u) => s.find((x) => x.k === 'u:' + u);
+  assert.ok(at('a').x < 0 && at('b').x < 0);            // 拉弦在左
+  assert.ok(at('c').y > Math.max(at('a').y, at('d').y)); // 打擊在最後
+  assert.equal(at('a').part, 'e1');
+});
+
 test('需要人數自動換算至少幾人；檔名對到聲部', async () => {
   const { parseNeeded, matchPart, partNameFromFile } = await import('../js/logic.js');
   assert.equal(parseNeeded('2'), 2); assert.equal(parseNeeded('2-3'), 2); assert.equal(parseNeeded('1↑'), 1); assert.equal(parseNeeded(''), 1);
