@@ -762,7 +762,8 @@ create or replace function public.can_see_report(rid uuid) returns boolean
 language sql stable security definer set search_path = public as $$
   select exists (select 1 from practice_reports r where r.id = rid and (
     r.user_id = auth.uid() or public.is_staff() or public.leads_user(r.user_id)
-    or exists (select 1 from piece_parts pp where pp.id = r.part_id and pp.tutor_id = auth.uid())
+    or exists (select 1 from piece_parts pp left join piece_parts par on par.id = pp.parent_id
+               where pp.id = r.part_id and (pp.tutor_id = auth.uid() or par.tutor_id = auth.uid()))  -- 含所屬聲部的聲部長
     or exists (select 1 from class_students cs join classes c on c.id = cs.class_id
                where cs.user_id = r.user_id and auth.uid() = any(c.teacher_ids))))
 $$;
@@ -895,8 +896,11 @@ create policy cal_admin on public.calendars for all using (public.is_admin()) wi
 
 create or replace function public.can_staff_part(pid uuid) returns boolean
 language sql stable security definer set search_path = public as $$
-  select public.is_officer() or (public.is_active() and exists (select 1 from piece_parts pp where pp.id = pid and (
-    pp.tutor_id = auth.uid() or (public.has_role('leader') and pp.section is not null and pp.section = any(public.my_sections())))))
+  select public.is_officer() or (public.is_active() and exists (select 1 from piece_parts pp
+    left join piece_parts par on par.id = pp.parent_id  -- 分部：所屬聲部的聲部長也能排
+    where pp.id = pid and (
+    pp.tutor_id = auth.uid() or par.tutor_id = auth.uid()
+    or (public.has_role('leader') and pp.section is not null and pp.section = any(public.my_sections())))))
 $$;
 -- 曲目與編制：社內成員看全部；槍手只看自己參與的曲目
 create policy piece_read on public.pieces for select using (public.is_insider() or public.in_piece(id));

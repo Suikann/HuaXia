@@ -388,6 +388,17 @@ test('分部：排在任一個分部的人讀得到所屬聲部的分譜，讀�
   assert.deepEqual(await t(A), ['打擊分譜', '排鼓分譜']);
 });
 
+test('分部：聲部長設在聲部上，就能替它的分部排人、看分部的練習回報', async () => {
+  const T = '00000000-0000-0000-0000-00000000002a';
+  await db.exec(`insert into auth.users values ('${T}','t@x','{"name":"打擊小老師"}')`);
+  await as(A, `update profiles set status='active' where id='${T}'; insert into user_roles values ('${T}','member');
+    update piece_parts set tutor_id='${T}' where id='${D(1)}'`);
+  assert.equal((await as(T, `insert into part_assignments (part_id,user_id) values ('${D(6)}','${B}')`)).error, undefined);  // 雨柱（打擊的分部）
+  assert.ok((await as(T, `insert into part_assignments (part_id,user_id) values ('${D(4)}','${B}')`)).error);               // 排鼓（別的聲部）
+  await as(B, `insert into practice_reports (piece_id,part_id,title) values ('${P5}','${D(2)}','定音鼓練習'),('${P5}','${D(4)}','排鼓練習')`);
+  assert.deepEqual((await as(T, `select title from practice_reports where piece_id='${P5}'`)).rows.map((r) => r.title), ['定音鼓練習']);
+});
+
 // ---------- 泠靈發譜函式（docs/LINGLING.md） ----------
 const P3 = '22222222-2222-2222-2222-222222222223', P4 = '22222222-2222-2222-2222-222222222224';
 const llPath = (piece, c, slot = 'score') => `lingling/${piece}/${c.repeat(64)}-${slot}.pdf`;
