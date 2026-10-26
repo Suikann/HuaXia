@@ -408,6 +408,39 @@ test('分部：刪聲部連分部、分部的排人與聲部的樂譜一起刪�
   assert.deepEqual((await as(A, `select title from scores where piece_id='${P5}'`)).rows.map((r) => r.title), ['排鼓分譜']);
 });
 
+// 網頁的聲部表單（js/views/pieces.js 的 saveFirstDivisi）照 divisiMovePlan 的順序寫入
+test('分部：替已排 8 人的聲部加第一個分部，人移到分部後聲部上沒有排人；照錯的順序會被擋', async () => {
+  const { divisiMovePlan } = await import('../js/logic.js');
+  const P8 = '22222222-2222-2222-2222-222222222228';
+  const RG = (n) => `88888888-8888-8888-8888-88888888888${n}`;
+  await as(A, `insert into pieces (id,title) values ('${P8}','春天組曲');
+    insert into piece_parts (id,piece_id,name,needed_min) values ('${D(30)}','${P8}','二胡',8),('${D(31)}','${P8}','二胡II',4);
+    insert into ringers (id,name,status) values ${[1, 2, 3, 4, 5, 6, 7].map((n) => `('${RG(n)}','外校${n}','accepted')`).join(',')};
+    insert into part_assignments (part_id,user_id) values ('${D(30)}','${B}'),('${D(31)}','${B}');
+    insert into part_assignments (part_id,ringer_id) values ${[1, 2, 3, 4, 5, 6, 7].map((n) => `('${D(30)}','${RG(n)}')`).join(',')}`);
+  const asgOf = async () => (await as(A, `select id,part_id,user_id,ringer_id from part_assignments where part_id in ('${D(30)}','${D(31)}','${D(32)}')`)).rows;
+  // 直接建成分部會被擋：聲部上還有人
+  assert.match((await as(A, `insert into piece_parts (piece_id,name,parent_id) values ('${P8}','二胡I','${D(30)}')`)).error ?? '', /排了人/);
+  // 新建分部：先建成獨立聲部，再移人，最後設所屬聲部
+  const plan = divisiMovePlan(D(30), null, await asgOf());
+  assert.equal(plan.people, 8);
+  const steps = (child, p) => [
+    p.drop.length && `delete from part_assignments where id in (${p.drop.map((x) => `'${x}'`).join(',')})`,
+    p.move.length && `update part_assignments set part_id='${child}' where id in (${p.move.map((x) => `'${x}'`).join(',')})`,
+    `update piece_parts set parent_id='${D(30)}' where id='${child}'`,
+  ].filter(Boolean);
+  assert.equal((await as(A, `insert into piece_parts (id,piece_id,name,needed_min) values ('${D(32)}','${P8}','二胡I',4)`)).error, undefined);
+  for (const sql of steps(D(32), plan)) assert.equal((await as(A, sql)).error, undefined, sql);
+  const after = await asgOf();
+  assert.equal(after.filter((a) => a.part_id === D(30)).length, 0);
+  assert.equal(after.filter((a) => a.part_id === D(32)).length, 8);
+  assert.equal(await parentOf(D(32)), D(30));
+  // 再把現有的二胡II 收進來：聲部已經有分部、沒有排人，不用移；阿B 同時在 I 與 II
+  assert.deepEqual(divisiMovePlan(D(30), D(31), after), { people: 0, drop: [], move: [] });
+  assert.equal((await as(A, `update piece_parts set parent_id='${D(30)}' where id='${D(31)}'`)).error, undefined);
+  assert.equal((await asgOf()).filter((a) => a.user_id === B).length, 2);
+});
+
 // ---------- 泠靈發譜函式（docs/LINGLING.md） ----------
 const P3 = '22222222-2222-2222-2222-222222222223', P4 = '22222222-2222-2222-2222-222222222224';
 const llPath = (piece, c, slot = 'score') => `lingling/${piece}/${c.repeat(64)}-${slot}.pdf`;

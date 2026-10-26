@@ -81,6 +81,41 @@ test('曲目缺人：每個聲部取「聲部缺的人」與「分部缺的位�
   assert.equal(pieceShortage([...erhu, ...perc, { id: 'q', needed_min: 2 }], four), 4 + 3 + 2);
 });
 
+test('所屬聲部：只列這首曲目本身不是分部的聲部；有分部或有分譜的聲部不能收成分部', async () => {
+  const { parentChoices } = await import('../js/logic.js');
+  const parts = [
+    { id: 'e', name: '二胡' }, { id: 'e1', name: '二胡I', parent_id: 'e' }, { id: 'e2', name: '二胡II', parent_id: 'e' },
+    { id: 'z', name: '中胡' }, { id: 'g', name: '高胡' },
+  ];
+  const scores = [{ part_id: 'g' }, { part_id: null }];
+  // 新增聲部：有分部的二胡也能選（加第二個分部）；分部不能選
+  assert.deepEqual(parentChoices(null, parts, scores), { options: [['e', '二胡'], ['z', '中胡'], ['g', '高胡']], blocked: null });
+  // 分部可以換到別的聲部或移出來，自己不在選項裡
+  assert.deepEqual(parentChoices(parts[1], parts, scores).options, [['e', '二胡'], ['z', '中胡'], ['g', '高胡']]);
+  assert.deepEqual(parentChoices(parts[3], parts, scores), { options: [['e', '二胡'], ['g', '高胡']], blocked: null });
+  // 有分部的聲部、有分譜的聲部：不能選所屬聲部，說明原因
+  assert.deepEqual(parentChoices(parts[0], parts, scores).options, []);
+  assert.match(parentChoices(parts[0], parts, scores).blocked, /二胡.*有分部/);
+  assert.deepEqual(parentChoices(parts[4], parts, scores).options, []);
+  assert.match(parentChoices(parts[4], parts, scores).blocked, /高胡.*分譜/);
+});
+
+test('加第一個分部：聲部上的排人移到分部，分部已經有的同一人不重複', async () => {
+  const { divisiMovePlan } = await import('../js/logic.js');
+  const asg = [
+    ...['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'].map((u) => ({ id: 'x' + u, part_id: 'e', user_id: u })),
+    { id: 'xr', part_id: 'e', ringer_id: 'r' },
+    { id: 'ya', part_id: 'e1', user_id: 'a' }, { id: 'yr', part_id: 'e1', user_id: 'r' }, { id: 'z', part_id: 'q', user_id: 'b' },
+  ];
+  const plan = divisiMovePlan('e', 'e1', asg);
+  assert.equal(plan.people, 9);
+  assert.deepEqual(plan.drop, ['xa']);                         // 阿 a 已經排在 e1
+  assert.deepEqual(plan.move, ['xb', 'xc', 'xd', 'xe', 'xf', 'xg', 'xh', 'xr']);  // 槍手 r 與社員 r 是不同人
+  // 新建的分部還沒有人；聲部沒排人時什麼都不用移
+  assert.deepEqual(divisiMovePlan('e', null, asg).move.length, 9);
+  assert.deepEqual(divisiMovePlan('q2', 'e1', asg), { people: 0, drop: [], move: [] });
+});
+
 test('出席率分級', () => {
   assert.equal(rateLevel(null), 'none');
   assert.equal(rateLevel(80), 'ok');

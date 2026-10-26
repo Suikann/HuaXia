@@ -1,6 +1,6 @@
 import { secsOf, mySecs } from '../core.js';
 import { sb, state, me, route, go, esc, run, toast, formDialog, pageHead, empty, chipPerson, activePeople, nameOf, render, $, $$, DEMO, sectionChip } from '../core.js';
-import { shortageOf, pieceShortage, divisiOf, SECTIONS, guessSection, autoSeat, reconcileSeats, STAGES, parseNeeded, matchPart, partNameFromFile } from '../logic.js';
+import { shortageOf, pieceShortage, divisiOf, parentChoices, divisiMovePlan, SECTIONS, guessSection, autoSeat, reconcileSeats, STAGES, parseNeeded, matchPart, partNameFromFile } from '../logic.js';
 import { seatSvg } from './seating.js';
 
 async function loadAll(pieceId = null) {
@@ -35,24 +35,53 @@ async function editPiece(pc = null) {
   if (r) { go(`/pieces/${r.data.id}`); render(); }
 }
 
-async function editPart(pieceId, part = null, nextSort = 1) {
+// cx：這首曲目的 { pieceId, pts, asg, scores }
+async function editPart(cx, part = null, nextSort = 1) {
   const people = activePeople().map((p) => [p.id, nameOf(p.id)]);
+  const choices = parentChoices(part, cx.pts, cx.scores);
   const v = await formDialog({
-    title: part ? `編輯聲部：${part.name}` : '新增聲部', danger: part ? '刪除' : null,
+    title: part ? `編輯聲部：${part.name}` : '新增聲部', danger: part ? '刪除' : null, switchBy: 'parent_id',
     fields: [
       { name: 'name', label: '聲部', required: true, value: part?.name, placeholder: '例：二胡I、打擊1、高笙' },
       { name: 'needed', label: '需要人數', value: part?.needed ?? '1', placeholder: '例：2、2-3、1↑', hint: '缺人判斷會自動取最小的數字' },
-      { name: 'section', label: '組別', type: 'select', value: part?.section || '', options: [['', '（依名稱自動判斷）'], ...SECTIONS.map((x) => [x, x])], hint: '座位表依組別排位置' },
+      { name: 'parent_id', label: '所屬聲部', type: 'select', value: part?.parent_id || '', options: [['', '（無）'], ...choices.options],
+        hint: choices.blocked || '選了就是那個聲部的分部，共看它的分譜' },
+      // 分部的組別與聲部長跟著所屬聲部，選了所屬聲部就不顯示
+      { name: 'section', label: '組別', type: 'select', value: part?.section || '', options: [['', '（依名稱自動判斷）'], ...SECTIONS.map((x) => [x, x])], hint: '座位表依組別排位置', only: [''] },
       { name: 'sort', label: '排序', type: 'number', value: part?.sort ?? nextSort, hint: '數字小的排前面；新增時會自動接在最後' },
-      { name: 'tutor_id', label: '聲部長（小老師）', type: 'select', value: part?.tutor_id || '', options: [['', '（無）'], ...people] },
+      { name: 'tutor_id', label: '聲部長（小老師）', type: 'select', value: part?.tutor_id || '', options: [['', '（無）'], ...people], only: [''] },
       { name: 'note', label: '備註', value: part?.note, full: true, placeholder: '例：前面有 solo、需要八度達人' },
     ],
   });
   if (!v) return;
   if (v.__danger) { await run(() => sb.from('piece_parts').delete().eq('id', part.id), '已刪除聲部'); return render(); }
-  const row = { ...v, section: v.section || null, tutor_id: v.tutor_id || null, needed_min: parseNeeded(v.needed), sort: v.sort ?? nextSort };
-  await run(() => part ? sb.from('piece_parts').update(row).eq('id', part.id) : sb.from('piece_parts').insert({ ...row, piece_id: pieceId }), '已儲存');
+  const parentId = v.parent_id || null;
+  const row = { ...v, parent_id: parentId, section: v.section || null, tutor_id: parentId ? null : v.tutor_id || null, needed_min: parseNeeded(v.needed), sort: v.sort ?? nextSort };
+  // 收進排了人的聲部（加第一個分部）：確認後把聲部上的人移到這個分部
+  const moving = parentId && parentId !== part?.parent_id ? divisiMovePlan(parentId, part?.id ?? null, cx.asg) : null;
+  if (moving?.people) {
+    const par = cx.pts.find((x) => x.id === parentId);
+    const ok = await formDialog({ title: '把排人移到分部', submit: '移過去', fields: [{ type: 'note', name: '_n',
+      text: `「${par.name}」排了 ${moving.people} 人，有分部的聲部不能排人。確認後這 ${moving.people} 人移到分部「${v.name}」。` }] });
+    if (!ok) return;
+    await saveFirstDivisi(cx, part, row, parentId);
+  } else {
+    await run(() => part ? sb.from('piece_parts').update(row).eq('id', part.id) : sb.from('piece_parts').insert({ ...row, piece_id: cx.pieceId }), '已儲存');
+  }
   render();
+}
+
+// 依資料庫觸發器接受的順序寫入（見 divisiMovePlan）：分部先以原本的所屬聲部存好，移完人才設成新的所屬聲部。
+// 中途失敗時已移的人留在這個分部，再存一次就會接著完成
+async function saveFirstDivisi(cx, part, row, parentId) {
+  const first = { ...row, parent_id: part?.parent_id ?? null };
+  const saved = await run(() => part ? sb.from('piece_parts').update(first).eq('id', part.id).select().single() : sb.from('piece_parts').insert({ ...first, piece_id: cx.pieceId }).select().single());
+  if (!saved) return;
+  const childId = saved.data.id;
+  const plan = divisiMovePlan(parentId, childId, cx.asg);
+  if (plan.drop.length && !(await run(() => sb.from('part_assignments').delete().in('id', plan.drop)))) return;
+  if (plan.move.length && !(await run(() => sb.from('part_assignments').update({ part_id: childId }).in('id', plan.move)))) return;
+  await run(() => sb.from('piece_parts').update({ parent_id: parentId }).eq('id', childId), `已儲存，${plan.people} 人移到「${row.name}」`);
 }
 
 async function assign(part, asg, ringers) {
@@ -219,12 +248,13 @@ route('/pieces/:id', async ({ id }) => {
   const mine = new Set(asg.filter((a) => a.user_id === me()).map((a) => a.part_id));
   setTimeout(() => {
     $('#edit-piece')?.addEventListener('click', () => editPiece(pc));
-    $('#add-part')?.addEventListener('click', () => editPart(id, null, Math.max(0, ...pts.map((x) => x.sort ?? 0)) + 1));
+    const cx = { pieceId: id, pts, asg, scores: scores || [] };
+    $('#add-part')?.addEventListener('click', () => editPart(cx, null, Math.max(0, ...pts.map((x) => x.sort ?? 0)) + 1));
     $('#import-parts')?.addEventListener('click', () => importParts(pc, pts));
     $('#up-full')?.addEventListener('click', () => uploadScore(pc, null));
     $('#batch-up')?.addEventListener('click', () => batchUpload(pc, pts.filter((x) => !x.parent_id)));  // 分部不能有樂譜
     $$('[data-up-sec]').forEach((b) => (b.onclick = () => uploadScore(pc, null, b.dataset.upSec)));
-    $$('[data-part-edit]').forEach((b) => (b.onclick = () => editPart(id, pts.find((x) => x.id === b.dataset.partEdit))));
+    $$('[data-part-edit]').forEach((b) => (b.onclick = () => editPart(cx, pts.find((x) => x.id === b.dataset.partEdit))));
     $$('[data-assign]').forEach((b) => (b.onclick = () => assign(pts.find((x) => x.id === b.dataset.assign), asg, ringers)));
     $$('[data-up]').forEach((b) => (b.onclick = () => uploadScore(pc, b.dataset.up)));
     $$('[data-score]').forEach((b) => (b.onclick = () => openScore((scores || []).find((s) => s.id === b.dataset.score))));
