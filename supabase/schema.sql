@@ -236,6 +236,7 @@ begin
     if tg_op = 'UPDATE' and exists (select 1 from scores where part_id = new.id) then
       raise exception '「%」有樂譜，分部不能有樂譜：要先刪掉或移走它的樂譜才能收成分部', new.name using errcode = '23514';
     end if;
+    new.section := par.section;  -- 分部的聲部組跟著所屬聲部
   end if;
   if tg_op = 'UPDATE' then
     if (new.parent_id is not null or new.piece_id <> old.piece_id)
@@ -249,6 +250,16 @@ end $$;
 drop trigger if exists piece_parts_tree on public.piece_parts;
 create trigger piece_parts_tree before insert or update on public.piece_parts
   for each row execute function public.piece_parts_tree();
+-- 聲部改聲部組時，分部跟著改
+create or replace function public.piece_parts_section_down() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  update piece_parts set section = new.section where parent_id = new.id and section is distinct from new.section;
+  return null;
+end $$;
+drop trigger if exists piece_parts_section_down on public.piece_parts;
+create trigger piece_parts_section_down after update of section on public.piece_parts
+  for each row when (new.section is distinct from old.section) execute function public.piece_parts_section_down();
 -- 樂譜不能掛在分部、有分部的聲部不能排人；鎖住聲部那一列，與同時把它收成分部的修改排隊
 create or replace function public.scores_divisi() returns trigger
 language plpgsql security definer set search_path = public as $$

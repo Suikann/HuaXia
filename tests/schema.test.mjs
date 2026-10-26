@@ -362,6 +362,22 @@ test('分部：樂譜只掛在聲部、排人只排在分部；已有樂譜或�
   await as(A, `delete from scores where id='${sc}'; delete from part_assignments where part_id='${D(4)}'`);
 });
 
+test('分部：聲部組跟著所屬聲部', async () => {
+  const sec = async (id) => (await as(A, `select section from piece_parts where id='${id}'`)).rows[0].section;
+  await as(A, `insert into piece_parts (id,piece_id,name,parent_id) values ('${D(6)}','${P5}','雨柱','${D(1)}');
+    insert into piece_parts (id,piece_id,name,section) values ('${D(7)}','${P5}','沙球','低音')`);
+  assert.equal(await sec(D(6)), '打擊');                   // 新建的分部
+  await as(A, `update piece_parts set parent_id='${D(1)}' where id='${D(7)}'`);
+  assert.equal(await sec(D(7)), '打擊');                   // 收成分部
+  await as(A, `update piece_parts set section='彈撥' where id='${D(1)}'`);
+  assert.deepEqual((await as(A, `select distinct section from piece_parts where parent_id='${D(1)}'`)).rows, [{ section: '彈撥' }]);  // 聲部改組
+  await as(A, `update piece_parts set section='吹管' where id='${D(6)}'`);
+  assert.equal(await sec(D(6)), '彈撥');                   // 分部自己改不了
+  await as(A, `update piece_parts set parent_id=null where id='${D(7)}'; update piece_parts set section='低音' where id='${D(7)}'`);
+  assert.equal(await sec(D(7)), '低音');                   // 變回獨立聲部就自己決定
+  await as(A, `update piece_parts set section='打擊' where id='${D(1)}'; delete from piece_parts where id='${D(7)}'`);
+});
+
 // ---------- 泠靈發譜函式（docs/LINGLING.md） ----------
 const P3 = '22222222-2222-2222-2222-222222222223', P4 = '22222222-2222-2222-2222-222222222224';
 const llPath = (piece, c, slot = 'score') => `lingling/${piece}/${c.repeat(64)}-${slot}.pdf`;
