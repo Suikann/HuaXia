@@ -399,6 +399,15 @@ test('分部：聲部長設在聲部上，就能替它的分部排人、看分�
   assert.deepEqual((await as(T, `select title from practice_reports where piece_id='${P5}'`)).rows.map((r) => r.title), ['定音鼓練習']);
 });
 
+test('分部：刪聲部連分部、分部的排人與聲部的樂譜一起刪，別的聲部不動', async () => {
+  const kids = [D(2), D(3), D(6)].map((x) => `'${x}'`).join(',');
+  assert.equal((await as(A, `select 1 from part_assignments where part_id in (${kids})`)).rows.length, 3);
+  assert.equal((await as(A, `delete from piece_parts where id='${D(1)}'`)).error, undefined);
+  assert.deepEqual((await as(A, `select id from piece_parts where piece_id='${P5}'`)).rows.map((r) => r.id), [D(4)]);
+  assert.equal((await as(A, `select 1 from part_assignments where part_id in (${kids})`)).rows.length, 0);
+  assert.deepEqual((await as(A, `select title from scores where piece_id='${P5}'`)).rows.map((r) => r.title), ['排鼓分譜']);
+});
+
 // ---------- 泠靈發譜函式（docs/LINGLING.md） ----------
 const P3 = '22222222-2222-2222-2222-222222222223', P4 = '22222222-2222-2222-2222-222222222224';
 const llPath = (piece, c, slot = 'score') => `lingling/${piece}/${c.repeat(64)}-${slot}.pdf`;
