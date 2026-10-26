@@ -378,6 +378,16 @@ test('分部：聲部組跟著所屬聲部', async () => {
   await as(A, `update piece_parts set section='打擊' where id='${D(1)}'; delete from piece_parts where id='${D(7)}'`);
 });
 
+test('分部：排在任一個分部的人讀得到所屬聲部的分譜，讀不到別的聲部的', async () => {
+  // 阿B 排在 定音鼓（打擊的分部）；槍手排在 云鑼（打擊的分部）
+  await as(A, `insert into part_assignments (part_id,ringer_id) values ('${D(3)}','44444444-4444-4444-4444-444444444444');
+    insert into scores (piece_id,part_id,title) values ('${P5}','${D(1)}','打擊分譜'),('${P5}','${D(4)}','排鼓分譜')`);
+  const t = async (u) => (await as(u, `select title from scores where piece_id='${P5}' and part_id is not null order by title`)).rows.map((r) => r.title);
+  assert.deepEqual(await t(B), ['打擊分譜']);
+  assert.deepEqual(await t(R), ['打擊分譜']);
+  assert.deepEqual(await t(A), ['打擊分譜', '排鼓分譜']);
+});
+
 // ---------- 泠靈發譜函式（docs/LINGLING.md） ----------
 const P3 = '22222222-2222-2222-2222-222222222223', P4 = '22222222-2222-2222-2222-222222222224';
 const llPath = (piece, c, slot = 'score') => `lingling/${piece}/${c.repeat(64)}-${slot}.pdf`;

@@ -915,8 +915,9 @@ create policy ringer_self on public.ringers for select using (user_id = auth.uid
 create or replace function public.can_read_score(s public.scores) returns boolean
 language sql stable security definer set search_path = public as $$
   select public.is_staff()
-    -- 分譜：排到這個聲部的人
-    or (s.part_id is not null and public.in_part(s.part_id))
+    -- 分譜：排到這個聲部、或排到它任一個分部的人
+    or (s.part_id is not null and (public.in_part(s.part_id)
+      or exists (select 1 from piece_parts c where c.parent_id = s.part_id and public.in_part(c.id))))
     -- 總譜：絲竹曲目大家都看得到；大團曲目給組長與這首曲子的聲部長（小老師）
     or (s.part_id is null and s.section is null and (
       (public.is_active() and exists (select 1 from pieces pc where pc.id = s.piece_id and pc.ensemble = 'sizhu')
@@ -928,7 +929,7 @@ language sql stable security definer set search_path = public as $$
       (public.is_insider() and s.section = any(public.my_sections()))
       or exists (select 1 from piece_parts pp where pp.piece_id = s.piece_id and pp.section = s.section and public.in_part(pp.id))))
 $$;
--- 樂譜：幹部與指導老師看全部；分譜看自己聲部；分組樂譜看自己那一組
+-- 樂譜：幹部與指導老師看全部；分譜看自己聲部（排在分部的看所屬聲部的）；分組樂譜看自己那一組
 -- （槍手沒有組別：排進這首曲子、且聲部屬於該組時也看得到）
 create policy score_read on public.scores for select using (public.can_read_score(scores));
 create policy score_write on public.scores for all using (public.is_officer()) with check (public.is_officer());
