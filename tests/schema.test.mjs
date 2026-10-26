@@ -337,6 +337,31 @@ test('分部：只有兩層，分部與所屬聲部同一首曲目', async () =>
   assert.equal((await as(A, `select 1 from piece_parts where name='定音鼓 1'`)).rows.length, 0);
 });
 
+test('分部：樂譜只掛在聲部、排人只排在分部；已有樂譜或排人時也不能收成分部', async () => {
+  // D(1) 打擊 有分部 D(2) 定音鼓、D(3) 云鑼；D(4) 排鼓 還是獨立聲部
+  const rejected = [
+    [`insert into scores (piece_id,part_id,title) values ('${P5}','${D(2)}','定音鼓')`, /分部不能有樂譜/],
+    [`insert into part_assignments (part_id,user_id) values ('${D(1)}','${B}')`, /有分部的聲部不能排人/],
+  ];
+  // 排鼓 先掛了樂譜：不能收成分部，也不能把樂譜改掛到分部
+  const sc = (await as(A, `insert into scores (piece_id,part_id,title) values ('${P5}','${D(4)}','排鼓') returning id`)).rows[0].id;
+  rejected.push([`update piece_parts set parent_id='${D(1)}' where id='${D(4)}'`, /有樂譜/]);
+  rejected.push([`update scores set part_id='${D(3)}' where id='${sc}'`, /分部不能有樂譜/]);
+  // 排鼓 排了人：不能替它加分部
+  assert.equal((await as(A, `insert into part_assignments (part_id,user_id) values ('${D(4)}','${B}'),('${D(2)}','${B}')`)).error, undefined);
+  rejected.push([`insert into piece_parts (piece_id,name,parent_id) values ('${P5}','排鼓 I','${D(4)}')`, /排了人/]);
+  for (const [sql, why] of rejected) {
+    const r = await as(A, sql);
+    assert.match(r.error ?? '', why, sql);
+    assert.equal(r.code, '23514', sql);
+  }
+  assert.equal((await as(A, `select 1 from scores where part_id in ('${D(1)}','${D(2)}','${D(3)}')`)).rows.length, 0);
+  assert.equal((await as(A, `select 1 from part_assignments where part_id='${D(1)}'`)).rows.length, 0);
+  assert.equal(await parentOf(D(4)), null);
+  assert.equal((await as(A, `select 1 from piece_parts where name='排鼓 I'`)).rows.length, 0);
+  await as(A, `delete from scores where id='${sc}'; delete from part_assignments where part_id='${D(4)}'`);
+});
+
 // ---------- 泠靈發譜函式（docs/LINGLING.md） ----------
 const P3 = '22222222-2222-2222-2222-222222222223', P4 = '22222222-2222-2222-2222-222222222224';
 const llPath = (piece, c, slot = 'score') => `lingling/${piece}/${c.repeat(64)}-${slot}.pdf`;

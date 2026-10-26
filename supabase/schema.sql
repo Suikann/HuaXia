@@ -210,7 +210,8 @@ update public.piece_parts set section = public.guess_section(name) where section
 -- 分部：聲部（對應一份分譜）底下可以再分排人的單位，例如二胡分 I、II，擊樂 2 依樂器分成風鈴、鈴鼓。
 -- parent_id 有值 = 這是那個聲部的分部。只分兩層；刪聲部連分部一起刪（分部的排人與樂譜再照原本的 cascade 刪）。
 -- 規則都在資料庫擋（網頁、泠靈、手動改資料都繞不過去），違反時錯誤代碼 23514：
---   分部不能再分出分部；有分部的聲部不能被收成分部；分部與所屬聲部同一首曲目。
+--   分部不能再分出分部；有分部的聲部不能被收成分部；分部與所屬聲部同一首曲目；
+--   樂譜只掛在聲部（分部不能有樂譜）；排人只排在分部（有分部的聲部不能有排人）。
 alter table public.piece_parts add column if not exists parent_id uuid references public.piece_parts(id) on delete cascade;
 create index if not exists piece_parts_parent on public.piece_parts (parent_id) where parent_id is not null;
 create or replace function public.piece_parts_tree() returns trigger
@@ -229,6 +230,12 @@ begin
     if par.piece_id <> new.piece_id then
       raise exception '分部與所屬聲部要在同一首曲目' using errcode = '23514';
     end if;
+    if exists (select 1 from part_assignments where part_id = new.parent_id) then
+      raise exception '「%」排了人，要先把人移到分部，才能替它分出分部', par.name using errcode = '23514';
+    end if;
+    if tg_op = 'UPDATE' and exists (select 1 from scores where part_id = new.id) then
+      raise exception '「%」有樂譜，分部不能有樂譜：要先刪掉或移走它的樂譜才能收成分部', new.name using errcode = '23514';
+    end if;
   end if;
   if tg_op = 'UPDATE' then
     if (new.parent_id is not null or new.piece_id <> old.piece_id)
@@ -242,6 +249,35 @@ end $$;
 drop trigger if exists piece_parts_tree on public.piece_parts;
 create trigger piece_parts_tree before insert or update on public.piece_parts
   for each row execute function public.piece_parts_tree();
+-- 樂譜不能掛在分部、有分部的聲部不能排人；鎖住聲部那一列，與同時把它收成分部的修改排隊
+create or replace function public.scores_divisi() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare pp piece_parts;
+begin
+  if new.part_id is not null then
+    select * into pp from piece_parts where id = new.part_id for share;
+    if pp.parent_id is not null then
+      raise exception '「%」是分部，分部不能有樂譜：樂譜掛在所屬聲部', pp.name using errcode = '23514';
+    end if;
+  end if;
+  return new;
+end $$;
+drop trigger if exists scores_divisi on public.scores;
+create trigger scores_divisi before insert or update of part_id on public.scores
+  for each row execute function public.scores_divisi();
+create or replace function public.part_assignments_divisi() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare pp piece_parts;
+begin
+  select * into pp from piece_parts where id = new.part_id for share;
+  if exists (select 1 from piece_parts where parent_id = new.part_id) then
+    raise exception '「%」有分部，有分部的聲部不能排人：排在分部', pp.name using errcode = '23514';
+  end if;
+  return new;
+end $$;
+drop trigger if exists part_assignments_divisi on public.part_assignments;
+create trigger part_assignments_divisi before insert or update of part_id on public.part_assignments
+  for each row execute function public.part_assignments_divisi();
 
 -- 座位表：每首曲子一份；seats = [{k:'u:<id>'|'r:<id>', part:<part id>, x, y}]（公尺，舞台前緣中央為 0,0）
 create table if not exists public.seating_charts (
