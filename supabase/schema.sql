@@ -1064,12 +1064,14 @@ create policy photos_delete on storage.objects for delete using (
 -- =====================================================================
 -- 泠靈（Ling Ling Suite）發譜函式（介面與依賴的欄位見 docs/LINGLING.md）
 -- =====================================================================
--- 泠靈把一首曲目的發譜（新建曲目、建聲部、改人數與聲部組、登記新樂譜、撤掉舊樂譜的登記、掛場次）
+-- 泠靈把一首曲目的發譜（新建曲目、建聲部並把現有聲部收成它的分部、改人數與聲部組、登記新樂譜、撤掉舊樂譜的登記、掛場次）
 -- 一次交給這個函式：任何一步失敗，整次呼叫都不生效。以呼叫者身分執行（security invoker），
 -- 上面的 RLS 照常生效，不是幹部就寫不進去。改介面時要把 lingling_publish_version 加一。
--- 錯誤代碼：PT409 版本不符、22023 輸入不對（含要撤的不是這首曲目泠靈發的樂譜）、PT404 找不到（PostgREST 依 PTxyz 回 HTTP xyz）、23505 檔案已有登記。
+-- 錯誤代碼：PT409 版本不符、22023 輸入不對（含要撤的不是這首曲目泠靈發的樂譜）、PT404 找不到（PostgREST 依 PTxyz 回 HTTP xyz）、
+-- 23505 檔案已有登記、23514 違反分部的規則（見 piece_parts_tree）。
+-- 版本 2：create_parts 的每一項可以帶 absorb（要收成分部的現有聲部編號），created_parts 的每一項帶回 absorbed。
 create or replace function public.lingling_publish_version() returns int
-language sql immutable as $$ select 1 $$;
+language sql immutable as $$ select 2 $$;
 
 create or replace function public.lingling_publish(payload jsonb) returns jsonb
 language plpgsql security invoker set search_path = public as $$
@@ -1079,6 +1081,7 @@ declare
   piece_created boolean := false;
   ll_path text := '^lingling/' || pid || '/[0-9a-f]{64}-[0-9a-z]{1,32}\.pdf$';  -- 這首曲目的泠靈路徑
   x jsonb; score jsonb; v_part uuid; v_score uuid; n int;
+  i int; v_child uuid; child piece_parts; absorbed jsonb;
   new_parts jsonb := '{}';   -- 這次新建的聲部：名稱 → 編號
   created jsonb := '[]'; added jsonb := '[]'; removed jsonb := '[]'; attached jsonb := '[]';
 begin
@@ -1111,7 +1114,7 @@ begin
             nullif(x->>'section', ''), coalesce((x->>'sort')::int, 0))
     returning id into v_part;
     new_parts := new_parts || jsonb_build_object(x->>'name', v_part);
-    created := created || jsonb_build_object('id', v_part, 'name', x->>'name');
+    created := created || jsonb_build_object('id', v_part, 'name', x->>'name', 'absorbed', '[]'::jsonb);
   end loop;
 
   -- 改現有聲部的人數與聲部組（欄位省略或 null 就不改）
@@ -1143,6 +1146,29 @@ begin
   )
   select coalesce(jsonb_agg(jsonb_build_object('id', id, 'part_id', gone.part_id, 'file_path', file_path)), '[]')
     into removed from gone;
+
+  -- 把現有聲部收成這次新建聲部的分部：在撤掉登記之後（被收的聲部上泠靈的舊登記要先撤掉，分部不能有樂譜）、
+  -- 登記新樂譜之前做。兩層、同曲目、分部無樂譜、有分部的聲部無排人由觸發器擋（23514）
+  for i in 0 .. jsonb_array_length(created) - 1 loop
+    v_part := (created->i->>'id')::uuid;
+    absorbed := '[]';
+    for v_child in select jsonb_array_elements_text(coalesce(payload->'create_parts'->i->'absorb', '[]'))::uuid loop
+      select * into child from piece_parts where id = v_child and piece_id = pid;
+      if not found then
+        raise exception '找不到這首曲目的聲部 %（可能已被刪除）', v_child using errcode = 'PT404';
+      end if;
+      if child.parent_id is not null then
+        raise exception '「%」已經是分部，不能再收進「%」', child.name, created->i->>'name' using errcode = '23514';
+      end if;
+      update piece_parts set parent_id = v_part where id = v_child and piece_id = pid;
+      get diagnostics n = row_count;
+      if n = 0 then
+        raise exception '找不到這首曲目的聲部 %（可能已被刪除，或沒有權限）', v_child using errcode = 'PT404';
+      end if;
+      absorbed := absorbed || to_jsonb(v_child);
+    end loop;
+    created := jsonb_set(created, array[i::text, 'absorbed'], absorbed);
+  end loop;
 
   -- 登記新樂譜：檔案要先傳到 Storage，路徑是泠靈的格式 lingling/<曲目編號>/<SHA-256>-<登記位置>.pdf；
   -- 一份 Storage 檔只給一筆登記（網頁刪樂譜時會連檔一起刪，共用的話會弄壞另一筆）
