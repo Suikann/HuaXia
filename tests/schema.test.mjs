@@ -602,6 +602,20 @@ test('泠靈發譜：新建聲部時把現有聲部收成分部；被收的聲�
   assert.deepEqual(await read(R), ['二胡']);  // 槍手排在 二胡ll
 });
 
+test('泠靈撤回：只把仍屬於那次新建聲部的分部改回獨立聲部，再刪新建的聲部，排的人不動', async () => {
+  const erhu = (await as(A, `select id from piece_parts where piece_id='${P6}' and name='二胡'`)).rows[0].id;
+  // 之後幹部在網頁上把 二胡ll 移到別的聲部底下
+  await as(A, `insert into piece_parts (id,piece_id,name) values ('${D(14)}','${P6}','二胡（網頁）'); update piece_parts set parent_id='${D(14)}' where id='${D(12)}'`);
+  // 泠靈經 REST：PATCH /rest/v1/piece_parts?id=in.(…)&parent_id=eq.<新建聲部> {"parent_id": null}
+  const unparent = (u) => as(u, `update piece_parts set parent_id=null where id in ('${D(11)}','${D(12)}') and parent_id='${erhu}' returning id`);
+  assert.deepEqual((await unparent(B)).rows, []);                        // 不是幹部：RLS 擋下，什麼都沒改
+  assert.deepEqual((await unparent(A)).rows, [{ id: D(11) }]);
+  assert.equal((await as(A, `delete from piece_parts where id='${erhu}'`)).error, undefined);
+  assert.equal(await parentOf(D(11)), null);
+  assert.equal(await parentOf(D(12)), D(14));
+  assert.equal((await as(A, `select 1 from part_assignments where part_id in ('${D(11)}','${D(12)}')`)).rows.length, 2);
+});
+
 test('泠靈發譜：收成分部違反規則時整次不生效', async () => {
   const P7 = '22222222-2222-2222-2222-222222222227';
   await upload(llPath(P7, '4', 'perc2'), llPath(P7, '5', 'bell'));
