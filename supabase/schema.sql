@@ -207,6 +207,42 @@ create trigger piece_parts_section before insert or update on public.piece_parts
   for each row execute function public.piece_parts_section();
 update public.piece_parts set section = public.guess_section(name) where section is null;
 
+-- 分部：聲部（對應一份分譜）底下可以再分排人的單位，例如二胡分 I、II，擊樂 2 依樂器分成風鈴、鈴鼓。
+-- parent_id 有值 = 這是那個聲部的分部。只分兩層；刪聲部連分部一起刪（分部的排人與樂譜再照原本的 cascade 刪）。
+-- 規則都在資料庫擋（網頁、泠靈、手動改資料都繞不過去），違反時錯誤代碼 23514：
+--   分部不能再分出分部；有分部的聲部不能被收成分部；分部與所屬聲部同一首曲目。
+alter table public.piece_parts add column if not exists parent_id uuid references public.piece_parts(id) on delete cascade;
+create index if not exists piece_parts_parent on public.piece_parts (parent_id) where parent_id is not null;
+create or replace function public.piece_parts_tree() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare par piece_parts;
+begin
+  if new.parent_id is not null then
+    -- 鎖住所屬聲部，同時有人替它排人或把它收成分部時排隊，不會兩邊都檢查通過
+    select * into par from piece_parts where id = new.parent_id for update;
+    if new.parent_id = new.id then
+      raise exception '聲部不能是自己的分部' using errcode = '23514';
+    end if;
+    if par.parent_id is not null then
+      raise exception '「%」已經是分部，分部不能再分出分部', par.name using errcode = '23514';
+    end if;
+    if par.piece_id <> new.piece_id then
+      raise exception '分部與所屬聲部要在同一首曲目' using errcode = '23514';
+    end if;
+  end if;
+  if tg_op = 'UPDATE' then
+    if (new.parent_id is not null or new.piece_id <> old.piece_id)
+       and exists (select 1 from piece_parts c where c.parent_id = new.id) then
+      raise exception '有分部的聲部不能被收成分部，也不能移到別首曲目：%', new.name using errcode = '23514';
+    end if;
+  end if;
+  return new;
+end $$;
+-- 觸發器依名稱順序執行：piece_parts_tree 排在 piece_parts_section 之後
+drop trigger if exists piece_parts_tree on public.piece_parts;
+create trigger piece_parts_tree before insert or update on public.piece_parts
+  for each row execute function public.piece_parts_tree();
+
 -- 座位表：每首曲子一份；seats = [{k:'u:<id>'|'r:<id>', part:<part id>, x, y}]（公尺，舞台前緣中央為 0,0）
 create table if not exists public.seating_charts (
   piece_id uuid primary key references public.pieces(id) on delete cascade,

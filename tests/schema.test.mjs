@@ -310,6 +310,33 @@ test('總譜：絲竹曲目大家都看得到；大團曲目只有組長、聲�
   assert.deepEqual(await t(B), ['P1總譜', 'P2總譜']);  // 當上 P1 的聲部長
 });
 
+// ---------- 分部：聲部底下可以再分排人的單位（piece_parts.parent_id），只分兩層 ----------
+const P5 = '22222222-2222-2222-2222-222222222225';
+const D = (n) => `77777777-7777-7777-7777-7777777777${String(n).padStart(2, '0')}`;
+const parentOf = async (id) => (await as(A, `select parent_id from piece_parts where id='${id}'`)).rows[0].parent_id;
+
+test('分部：只有兩層，分部與所屬聲部同一首曲目', async () => {
+  await as(A, `insert into pieces (id,title) values ('${P5}','難忘的潑水節');
+    insert into piece_parts (id,piece_id,name) values ('${D(1)}','${P5}','打擊'),('${D(2)}','${P5}','定音鼓'),('${D(3)}','${P5}','云鑼'),
+      ('${D(4)}','${P5}','排鼓'),('${D(5)}','${P1}','梆笛');`);
+  assert.equal((await as(A, `update piece_parts set parent_id='${D(1)}' where id in ('${D(2)}','${D(3)}')`)).error, undefined);
+  assert.equal(await parentOf(D(2)), D(1));
+  const rejected = [
+    [`insert into piece_parts (piece_id,name,parent_id) values ('${P5}','定音鼓 1','${D(2)}')`, /分部不能再分出分部/],  // 分部底下再分
+    [`update piece_parts set parent_id='${D(4)}' where id='${D(1)}'`, /有分部的聲部不能/],                         // 有分部的聲部被收進別的聲部
+    [`update piece_parts set parent_id='${D(5)}' where id='${D(4)}'`, /同一首曲目/],                               // 別首曲目的聲部
+    [`update piece_parts set parent_id='${D(4)}' where id='${D(4)}'`, /自己/],                                     // 自己
+  ];
+  for (const [sql, why] of rejected) {
+    const r = await as(A, sql);
+    assert.match(r.error ?? '', why, sql);
+    assert.equal(r.code, '23514', sql);
+  }
+  assert.equal(await parentOf(D(1)), null);
+  assert.equal(await parentOf(D(4)), null);
+  assert.equal((await as(A, `select 1 from piece_parts where name='定音鼓 1'`)).rows.length, 0);
+});
+
 // ---------- 泠靈發譜函式（docs/LINGLING.md） ----------
 const P3 = '22222222-2222-2222-2222-222222222223', P4 = '22222222-2222-2222-2222-222222222224';
 const llPath = (piece, c, slot = 'score') => `lingling/${piece}/${c.repeat(64)}-${slot}.pdf`;
