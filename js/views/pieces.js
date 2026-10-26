@@ -1,6 +1,6 @@
 import { secsOf, mySecs } from '../core.js';
 import { sb, state, me, route, go, esc, run, toast, formDialog, pageHead, empty, chipPerson, activePeople, nameOf, render, $, $$, DEMO, sectionChip } from '../core.js';
-import { shortageOf, pieceShortage, divisiOf, parentChoices, divisiMovePlan, SECTIONS, guessSection, autoSeat, reconcileSeats, STAGES, parseNeeded, matchPart, partNameFromFile } from '../logic.js';
+import { shortageOf, pieceShortage, divisiOf, parentChoices, divisiMovePlan, deleteCounts, SECTIONS, guessSection, autoSeat, reconcileSeats, STAGES, parseNeeded, matchPart, partNameFromFile } from '../logic.js';
 import { seatSvg } from './seating.js';
 
 async function loadAll(pieceId = null) {
@@ -54,7 +54,13 @@ async function editPart(cx, part = null, nextSort = 1) {
     ],
   });
   if (!v) return;
-  if (v.__danger) { await run(() => sb.from('piece_parts').delete().eq('id', part.id), '已刪除聲部'); return render(); }
+  if (v.__danger) {
+    // 有分部的聲部：資料庫連分部與排人一起刪，先寫出數量再確認一次
+    const n = deleteCounts(part, cx.pts, cx.asg);
+    if (n.divisi && !(await formDialog({ title: `刪除聲部「${part.name}」`, submit: '刪除', fields: [{ type: 'note', name: '_n',
+      text: `會一起刪掉 ${n.divisi} 個分部、${n.people} 人的排人。` }] }))) return;
+    await run(() => sb.from('piece_parts').delete().eq('id', part.id), '已刪除聲部'); return render();
+  }
   const parentId = v.parent_id || null;
   const row = { ...v, parent_id: parentId, section: v.section || null, tutor_id: parentId ? null : v.tutor_id || null, needed_min: parseNeeded(v.needed), sort: v.sort ?? nextSort };
   // 收進排了人的聲部（加第一個分部）：確認後把聲部上的人移到這個分部

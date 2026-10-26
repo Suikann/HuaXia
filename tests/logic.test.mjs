@@ -116,6 +116,14 @@ test('加第一個分部：聲部上的排人移到分部，分部已經有的�
   assert.deepEqual(divisiMovePlan('q2', 'e1', asg), { people: 0, drop: [], move: [] });
 });
 
+test('刪有分部的聲部：算出會一起刪掉幾個分部、幾人的排人（一人排在好幾個分部算一人）', async () => {
+  const { deleteCounts } = await import('../js/logic.js');
+  const parts = [{ id: 'p' }, { id: 'p1', parent_id: 'p' }, { id: 'p2', parent_id: 'p' }, { id: 'p3', parent_id: 'p' }, { id: 'q' }];
+  const asg = [{ part_id: 'p1', user_id: 'a' }, { part_id: 'p2', user_id: 'a' }, { part_id: 'p3', ringer_id: 'r' }, { part_id: 'q', user_id: 'b' }];
+  assert.deepEqual(deleteCounts(parts[0], parts, asg), { divisi: 3, people: 2 });
+  assert.deepEqual(deleteCounts(parts[4], parts, asg), { divisi: 0, people: 1 });
+});
+
 test('出席率分級', () => {
   assert.equal(rateLevel(null), 'none');
   assert.equal(rateLevel(80), 'ok');

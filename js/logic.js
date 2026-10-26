@@ -74,6 +74,10 @@ function peopleIn(part, parts, asg) {
 export function shortageOf(part, parts, asg) {
   return partShortage(part, peopleIn(part, parts, asg));
 }
+// 刪聲部會一起刪掉的分部數與排人（幾個不同的人）；資料庫刪聲部連分部與排人一起刪
+export function deleteCounts(part, parts, asg) {
+  return { divisi: divisiOf(part.id, parts).length, people: peopleIn(part, parts, asg) };
+}
 // 聲部表單的「所屬聲部」：parts 是這首曲目的聲部，part 是正在編輯的（新增時是 null）
 // 只列本身不是分部的聲部；自己有分部、或有分譜時不能收成分部（資料庫也會擋），blocked 寫原因
 export function parentChoices(part, parts, scores) {
