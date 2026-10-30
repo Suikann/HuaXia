@@ -34,12 +34,13 @@ async function sectionView(sec) {
   const rated = secStats.filter((s) => s.current_rate != null);
   const avg = rated.length ? rated.reduce((a, b) => a + Number(b.current_rate), 0) / rated.length : null;
   const statOf = new Map(secStats.map((s) => [s.user_id, s]));
-  const canSeeAll = p.officer || mySecs().includes(sec);
+  // 出席率：幹部看全部、組長看自己組；一般社員只看得到自己的（資料庫本來就只給這些）
+  const canSeeAll = p.officer || (p.leader && mySecs().includes(sec));
 
   return `<section class="grp-hero sec-${esc(sec)}"><div>
       <h2>${esc(sec)}組</h2>
       <p class="small muted">${members.length} 位成員${leaders.length ? `・組長 ${leaders.map((u) => esc(nameOf(u.id))).join('、')}` : ''}</p></div>
-      ${!p.ringerOnly ? `<div class="grp-rate lv-${rateLevel(avg)}"><span>組內出席率</span><b class="mono">${avg == null ? '—' : Math.round(avg)}${avg == null ? '' : '<small>%</small>'}</b></div>` : ''}
+      ${canSeeAll && !p.ringerOnly ? `<div class="grp-rate lv-${rateLevel(avg)}"><span>組內出席率</span><b class="mono">${avg == null ? '—' : Math.round(avg)}${avg == null ? '' : '<small>%</small>'}</b></div>` : ''}
     </section>
     <div class="grp-grid">
       <section class="card"><div class="card-head"><h2>分部課</h2><a class="link" href="#/events">行事曆</a></div>
@@ -51,7 +52,7 @@ async function sectionView(sec) {
       ${members.length ? `<ul class="grp-people">${members.map((u) => {
         const st = statOf.get(u.id);
         return `<li class="${u.id === me() ? 'me' : ''}">${avatar(u.id, 36)}<div><b>${esc(nameOf(u.id))}</b>${u.roles.includes('leader') ? '<span class="chip gold">組長</span>' : ''}
-          <span class="small muted">${esc(u.instruments || '')}</span></div>${canSeeAll && !p.ringerOnly ? pct(st?.current_rate ?? null) : ''}</li>`;
+          <span class="small muted">${esc(u.instruments || '')}</span></div>${(canSeeAll || u.id === me()) && !p.ringerOnly ? pct(st?.current_rate ?? null) : ''}</li>`;
       }).join('')}</ul>` : empty('這組還沒有成員', p.admin ? '到頭像選單的「成員」設定每個人的組別。' : '')}
     </section>`;
 }
