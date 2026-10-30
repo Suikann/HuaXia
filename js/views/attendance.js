@@ -2,6 +2,7 @@ import { secsOf } from '../core.js';
 import { sb, state, me, route, esc, pageHead, empty, fmtDate, chipPerson, nameOf, sectionChip, render, $, $$ } from '../core.js';
 import { ATT_LABEL, KIND_LABEL, LEAVE_LABEL, SECTIONS, rateLevel } from '../logic.js';
 import { rateRing } from './home.js';
+import { toggleAttend, leaveDialog } from './events.js';
 
 const pct = (r) => r == null ? '<span class="muted">—</span>' : `<span class="rate rate-${rateLevel(r)} mono">${Math.round(r)}%</span>`;
 
@@ -10,8 +11,17 @@ async function detail(uid) {
   const { data } = await sb.rpc('attendance_detail', { sem: state.semester.id, uid });
   const rows = (data || []).filter((r) => r.expected || r.status);
   if (!rows.length) return '<p class="muted">這學期還沒有需要出席的行程。</p>';
-  return `<div class="tbl-wrap"><table class="att-tbl"><thead><tr><th>日期</th><th>行程</th><th>狀態</th><th>事由</th></tr></thead><tbody>
-    ${rows.map((r) => `<tr><td class="mono nowrap">${fmtDate(r.starts_at)}</td><td><a href="#/events/${r.event_id}">${esc(r.title)}</a> <span class="muted small">${KIND_LABEL[r.kind]}</span></td>
+  // 自己的明細：還沒點名、還沒開始（或剛開始）的場次，可以直接回覆出席或請假
+  const mine = uid === me(), soon = Date.now() - 3 * 3600e3;
+  const reply = (r) => {
+    if (!r.expected || r.marked || r.status || new Date(r.starts_at).getTime() < soon) return '';
+    const dat = `data-ev="${r.event_id}" data-title="${esc(r.title)}"`;
+    if (r.leave_type && r.leave_type !== 'attend') return `<button class="btn sm line" data-rsvp-leave ${dat} data-type="${r.leave_type}" data-reason="${esc(r.leave_reason || '')}">已${LEAVE_LABEL[r.leave_type]}・修改</button>`;
+    const on = r.leave_type === 'attend';
+    return `<div class="rsvp"><button class="btn sm ${on ? 'pri' : 'line'}" data-rsvp-go="${on ? '' : '1'}" ${dat} aria-pressed="${on}">${on ? '✓ 出席' : '出席'}</button><button class="btn sm ghost" data-rsvp-leave ${dat}>請假／晚到</button></div>`;
+  };
+  return `<div class="tbl-wrap"><table class="att-tbl"><thead><tr><th>日期</th><th>行程</th>${mine ? '<th>我的回覆</th>' : ''}<th>狀態</th><th>事由</th></tr></thead><tbody>
+    ${rows.map((r) => `<tr><td class="mono nowrap">${fmtDate(r.starts_at)}</td><td><a href="#/events/${r.event_id}">${esc(r.title)}</a> <span class="muted small">${KIND_LABEL[r.kind]}</span></td>${mine ? `<td>${reply(r)}</td>` : ''}
       <td>${r.status ? `<span class="att att-${r.status}">${ATT_LABEL[r.status]}</span>` : r.marked ? '' : '<span class="muted small">尚未點名</span>'}</td>
       <td class="small">${r.leave_type && r.leave_type !== 'attend' ? `<span class="muted">${LEAVE_LABEL[r.leave_type]}：</span>${esc(r.leave_reason || '')}` : esc(r.note || '')}</td></tr>`).join('')}
   </tbody></table></div>`;
@@ -33,6 +43,8 @@ route('/attendance', async () => {
   });
   const myDetail = await detail(me());  // 先載完自己的明細，再綁定按鈕（不然正式網站會綁不到）
   setTimeout(() => {
+    $$('[data-rsvp-go]').forEach((b) => (b.onclick = () => toggleAttend(b.dataset.ev, !!b.dataset.rsvpGo)));
+    $$('[data-rsvp-leave]').forEach((b) => (b.onclick = () => leaveDialog({ id: b.dataset.ev, title: b.dataset.title }, b.dataset.type ? { type: b.dataset.type, reason: b.dataset.reason } : null)));
     $$('[data-sec]').forEach((b) => (b.onclick = () => { sessionStorage.setItem('attSec', b.dataset.sec); render(); }));
     $$('[data-who]').forEach((tr) => (tr.onclick = async () => {
       const box = $('#who-detail'); box.innerHTML = `<h2>${esc(nameOf(tr.dataset.who))} 的出席明細</h2>` + await detail(tr.dataset.who); box.hidden = false; box.scrollIntoView({ behavior: 'smooth', block: 'start' });

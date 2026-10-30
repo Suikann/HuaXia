@@ -112,7 +112,7 @@ export async function toggleAttend(evId, on) {
   render();
 }
 
-async function leaveDialog(ev, cur) {
+export async function leaveDialog(ev, cur) {
   const v = await formDialog({
     title: `${cur ? '修改' : ''}請假：${ev.title}`,
     danger: cur ? '撤回' : null,

@@ -632,3 +632,7 @@ input[type="date"]::-webkit-date-and-time-value, input[type="time"]::-webkit-dat
 .ann-links { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .ann-links a { display: inline-flex; align-items: center; gap: 4px; padding: 4px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--sunk); font-size: 13px; color: var(--accent); }
 .ann-links a:hover { border-color: var(--accent); text-decoration: none; }
+
+/* 出席明細：直接回覆出席或請假 */
+.rsvp { display: flex; gap: 6px; flex-wrap: nowrap; }
+.att-tbl .btn.sm { white-space: nowrap; }
